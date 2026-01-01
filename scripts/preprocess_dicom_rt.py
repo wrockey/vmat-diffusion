@@ -4,9 +4,13 @@ import numpy as np
 import pydicom
 from skimage.draw import polygon
 import warnings
-import matplotlib.pyplot as plt
 import argparse
 import SimpleITK as sitk
+
+# Force non-interactive backend to avoid Qt/Wayland/X11 issues on headless systems
+import matplotlib
+matplotlib.use('Agg')  # Must be before importing pyplot
+import matplotlib.pyplot as plt
 
 # Relax pydicom validation for Pinnacle DS VR precision issues
 import pydicom.config
@@ -88,7 +92,8 @@ def resample_image(image, reference, interpolator=sitk.sitkLinear):
     resampler.SetDefaultPixelValue(0.0)
     return resampler.Execute(image)
 
-def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 512, 256), target_spacing=(1.0, 1.0, 2.0), use_gamma=False, relax_filter=False):
+def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 512, 256), target_spacing=(1.0, 1.0, 2.0), use_gamma=False, relax_filter=False, skip_plots=False):
+    os.makedirs(output_dir, exist_ok=True)
     try:
         ct_volume, ct_spacing, position, slice_z, ct_ds = get_ct_volume_and_metadata(plan_dir)
         
@@ -109,12 +114,13 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
             warnings.warn(f"Skipping {plan_dir}: Missing PTV70/PTV56")
             return None
         
-        prostate_mask = masks[2]
+        # Use PTV70 if prostate empty for centering
+        prostate_mask = masks[2] if masks[2].sum() > 0 else masks[0]
         
         # Compute physical centroid
         nonzero = np.nonzero(prostate_mask)
         if len(nonzero[0]) == 0:
-            warnings.warn("No prostate mask; centering on mid-volume")
+            warnings.warn("No prostate/PTV mask; centering on mid-volume")
             mid_y = prostate_mask.shape[0] / 2
             mid_x = prostate_mask.shape[1] / 2
             mid_z = prostate_mask.shape[2] / 2
@@ -142,6 +148,7 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         dose_array = dose_ds.pixel_array.astype(np.float32) * dose_scaling
         if dose_array.ndim != 3:
             raise ValueError("Dose not 3D")
+        print(f"Dose original shape: {dose_array.shape}")
         dose_array_sitk = dose_array  # (z, y, x)
         dose_position = [float(x) for x in dose_ds.ImagePositionPatient]
         dose_pixel_spacing = [float(x) for x in dose_ds.PixelSpacing]
@@ -155,23 +162,21 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
             dose_z_positions = [dose_position[2]]
             if dose_array.shape[0] != 1:
                 raise ValueError("Multi-frame dose without GridFrameOffsetVector")
+        # Always sort z for robustness
+        sort_idx = np.argsort(dose_z_positions)
+        if not np.all(sort_idx == np.arange(len(sort_idx))):
+            warnings.warn("Sorting non-increasing dose z-positions")
+            dose_array_sitk = dose_array_sitk[sort_idx]
+            dose_z_positions = [dose_z_positions[i] for i in sort_idx]
         if len(dose_z_positions) > 1:
             diffs = np.diff(dose_z_positions)
-            if not np.allclose(diffs, diffs[0], rtol=1e-3):
-                warnings.warn("Non-uniform dose z-spacing; using mean")
             dose_z_spacing = np.mean(diffs)
+            if np.std(diffs) > 0.1:
+                warnings.warn(f"Non-uniform dose z-spacing (std={np.std(diffs):.2f}); using mean {dose_z_spacing:.2f}")
         else:
             dose_z_spacing = ct_spacing[2]
         dose_spacing_sitk = (dose_pixel_spacing[0], dose_pixel_spacing[1], dose_z_spacing)
-        dose_origin_sitk = (dose_position[0], dose_position[1], min(dose_z_positions))  # Use min for origin
-        # Sort z-positions if not increasing
-        if len(dose_z_positions) > 1 and dose_z_positions[1] < dose_z_positions[0]:
-            warnings.warn("Decreasing dose z; sorting")
-            sort_idx = np.argsort(dose_z_positions)
-            dose_array_sitk = dose_array_sitk[sort_idx]
-            dose_z_positions = np.array(dose_z_positions)[sort_idx]
-            dose_z_spacing = np.abs(dose_z_spacing)  # Ensure positive
-            dose_origin_sitk = (dose_position[0], dose_position[1], min(dose_z_positions))
+        dose_origin_sitk = (dose_position[0], dose_position[1], dose_z_positions[0])
         dose_image = sitk.GetImageFromArray(dose_array_sitk)
         dose_image.SetSpacing(dose_spacing_sitk)
         dose_image.SetOrigin(dose_origin_sitk)
@@ -196,6 +201,7 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         # Resample dose
         dose_resampled = resample_image(dose_image, reference_image, sitk.sitkLinear)
         dose_volume = sitk.GetArrayFromImage(dose_resampled).transpose(1, 2, 0) / 70.0
+        dose_volume = np.maximum(dose_volume, 0)  # Clip negative artifacts
         
         # Resample masks
         masks_resampled = np.zeros((len(structure_map),) + target_shape, dtype=np.uint8)
@@ -215,7 +221,6 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         ptv_type = np.array([1.0, 0.0, 0.0])
         constraints = np.concatenate([AAPM_CONSTRAINTS, ptv_type])
         
-        os.makedirs(output_dir, exist_ok=True)
         plan_id = os.path.basename(plan_dir)
         output_path = os.path.join(output_dir, f'{plan_id}.npz')
         np.savez(output_path, ct=ct_volume, masks=masks_resampled, dose=dose_volume, constraints=constraints)
@@ -223,25 +228,33 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         stats = {'mask_sums': [int(masks_resampled[ch].sum()) for ch in range(len(structure_map))],
                  'dose_mean': float(dose_volume.mean())}
         print(f"Processed {plan_dir} to {output_path}: {stats}")
-        fig, axs = plt.subplots(1, 3, figsize=(15,5))
-        mid = target_shape[2] // 2
-        axs[0].imshow(ct_volume[:, :, mid], cmap='gray')
-        axs[1].imshow(dose_volume[:, :, mid], cmap='hot')
-        axs[2].imshow(masks_resampled[0][:, :, mid], cmap='binary')
-        plt.savefig(os.path.join(output_dir, f'debug_{plan_id}.png'))
-        plt.close()
+        
+        if not skip_plots:
+            fig, axs = plt.subplots(1, 3, figsize=(15, 6))  # Increased height to 6 for title room
+            mid = target_shape[2] // 2
+            axs[0].imshow(ct_volume[:, :, mid], cmap='gray', vmin=0, vmax=1)
+            axs[1].imshow(dose_volume[:, :, mid] * 70, cmap='hot', vmin=0, vmax=70)  # Show in Gy
+            axs[2].imshow(masks_resampled[0][:, :, mid], cmap='binary')
+            axs[0].set_title('CT (mid)')
+            axs[1].set_title('Dose (Gy)')
+            axs[2].set_title('PTV70')
+            for ax in axs:
+                ax.axis('off')
+            plt.subplots_adjust(top=0.90, bottom=0.05, left=0.05, right=0.95, wspace=0.1)  # Adjust top margin
+            plt.savefig(os.path.join(output_dir, f'debug_{plan_id}.png'), dpi=150)
+            plt.close()
         
         return output_path
     except Exception as e:
         warnings.warn(f"Error processing {plan_dir}: {e}")
         return None
 
-def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json', use_gamma=False, relax_filter=False):
+def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json', use_gamma=False, relax_filter=False, skip_plots=False):
     structure_map = load_json_mapping(mapping_file)
     plan_dirs = sorted([os.path.join(input_base_dir, d) for d in os.listdir(input_base_dir) if os.path.isdir(os.path.join(input_base_dir, d))])
     processed = []
     for plan_dir in plan_dirs:
-        result = preprocess_dicom_rt(plan_dir, output_dir, structure_map, use_gamma=use_gamma, relax_filter=relax_filter)
+        result = preprocess_dicom_rt(plan_dir, output_dir, structure_map, use_gamma=use_gamma, relax_filter=relax_filter, skip_plots=skip_plots)
         if result:
             processed.append(result)
     print(f"Batch complete: {len(processed)}/{len(plan_dirs)} cases processed")
@@ -253,8 +266,9 @@ if __name__ == "__main__":
     parser.add_argument("--mapping_file", default="oar_mapping.json")
     parser.add_argument("--use_gamma", action="store_true")
     parser.add_argument("--relax_filter", action="store_true")
+    parser.add_argument("--skip_plots", action="store_true", help="Skip saving debug PNGs (useful on headless systems)")
     args = parser.parse_args()
 
     input_dir = os.path.expanduser(args.input_dir)
     output_dir = os.path.expanduser(args.output_dir)
-    batch_preprocess(input_dir, output_dir, args.mapping_file, args.use_gamma, args.relax_filter)
+    batch_preprocess(input_dir, output_dir, args.mapping_file, args.use_gamma, args.relax_filter, args.skip_plots)
