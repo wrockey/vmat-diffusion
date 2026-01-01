@@ -1,3 +1,14 @@
+"""
+Preprocess DICOM-RT VMAT plans to .npz for diffusion model training.
+
+Functionality: Resamples/aligns CT, masks, dose to fixed grid (512x512x256 @ 1x1x2mm),
+centers on prostate/PTV70, normalizes, and saves with constraints.
+
+Assumptions: See README.md.
+
+Usage: python preprocess_dicom_rt.py [flags]
+"""
+
 import os
 import json
 import numpy as np
@@ -31,12 +42,36 @@ AAPM_CONSTRAINTS = np.array([
 ]) / 100.0
 
 def load_json_mapping(mapping_file='oar_mapping.json'):
+    """
+    Load the OAR mapping JSON file for contour variations.
+
+    Args:
+        mapping_file (str): Path to the JSON file.
+
+    Returns:
+        dict: Loaded mapping.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
     if not os.path.exists(mapping_file):
         raise FileNotFoundError(f"{mapping_file} not found; run generate_mapping_json.py and edit")
     with open(mapping_file, 'r') as f:
         return json.load(f)
 
 def get_ct_volume_and_metadata(plan_dir):
+    """
+    Load and stack CT slices, sort by Z, compute metadata.
+
+    Args:
+        plan_dir (str): Path to the plan directory.
+
+    Returns:
+        tuple: (ct_volume, spacing, position, slice_z, ct_ds)
+
+    Raises:
+        ValueError: If no CT files found.
+    """
     ct_files = [f for f in os.listdir(plan_dir) if f.startswith('CT')]
     if not ct_files:
         raise ValueError(f"No CT files in {plan_dir}")
@@ -53,6 +88,16 @@ def get_ct_volume_and_metadata(plan_dir):
     return ct_volume, spacing, position, slice_z, ct_ds
 
 def get_roi_numbers(rtstruct, variations):
+    """
+    Get ROI numbers matching variations in the structure set.
+
+    Args:
+        rtstruct: pydicom Dataset for RS.
+        variations (list): List of name variations.
+
+    Returns:
+        list: Matching ROI numbers.
+    """
     roi_nums = []
     for roi in rtstruct.StructureSetROISequence:
         name = roi.ROIName.lower().replace('_', '').replace(' ', '').replace('gy', '').replace('-', '')
@@ -61,6 +106,21 @@ def get_roi_numbers(rtstruct, variations):
     return roi_nums
 
 def create_mask_from_contours(rtstruct, roi_nums, ct_shape, position, spacing, slice_z, ct_ds):
+    """
+    Create binary mask from contours for given ROIs.
+
+    Args:
+        rtstruct: pydicom Dataset for RS.
+        roi_nums (list): ROI numbers to include.
+        ct_shape (tuple): Shape of CT volume.
+        position (np.array): Image position.
+        spacing (np.array): Pixel spacing.
+        slice_z (np.array): Z positions of slices.
+        ct_ds (list): List of CT slice Datasets.
+
+    Returns:
+        np.array: Binary mask (uint8).
+    """
     mask = np.zeros(ct_shape, dtype=np.uint8)
     for roi_num in roi_nums:
         try:
@@ -86,6 +146,17 @@ def create_mask_from_contours(rtstruct, roi_nums, ct_shape, position, spacing, s
     return mask
 
 def resample_image(image, reference, interpolator=sitk.sitkLinear):
+    """
+    Resample an image to a reference grid using SimpleITK.
+
+    Args:
+        image: sitk.Image to resample.
+        reference: sitk.Image reference grid.
+        interpolator: sitk interpolator (default linear).
+
+    Returns:
+        sitk.Image: Resampled image.
+    """
     resampler = sitk.ResampleImageFilter()
     resampler.SetReferenceImage(reference)
     resampler.SetInterpolator(interpolator)
@@ -93,6 +164,24 @@ def resample_image(image, reference, interpolator=sitk.sitkLinear):
     return resampler.Execute(image)
 
 def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 512, 256), target_spacing=(1.0, 1.0, 2.0), use_gamma=False, relax_filter=False, skip_plots=False):
+    """
+    Process a single DICOM-RT plan directory.
+
+    Args:
+        plan_dir (str): Path to case dir with DICOM files.
+        output_dir (str): Path to save .npz and PNGs.
+        structure_map (dict): OAR mapping from JSON.
+        target_shape (tuple): Fixed output shape (default 512x512x256).
+        target_spacing (tuple): Target voxel spacing (default 1x1x2 mm).
+        use_gamma (bool): Placeholder for gamma computation.
+        relax_filter (bool): Process even with zero PTV sums.
+        skip_plots (bool): Skip debug PNGs.
+
+    Returns:
+        str: Path to output .npz or None on error.
+
+    Assumptions: Variable grids handled via SimpleITK; dose may have different extents.
+    """
     os.makedirs(output_dir, exist_ok=True)
     try:
         ct_volume, ct_spacing, position, slice_z, ct_ds = get_ct_volume_and_metadata(plan_dir)
@@ -250,6 +339,20 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         return None
 
 def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json', use_gamma=False, relax_filter=False, skip_plots=False):
+    """
+    Batch process multiple plan directories.
+
+    Args:
+        input_base_dir (str): Base raw data directory.
+        output_dir (str): Output directory.
+        mapping_file (str): OAR mapping file.
+        use_gamma (bool): Placeholder.
+        relax_filter (bool): Relax PTV filter.
+        skip_plots (bool): Skip PNGs.
+
+    Prints:
+        Batch completion stats.
+    """
     structure_map = load_json_mapping(mapping_file)
     plan_dirs = sorted([os.path.join(input_base_dir, d) for d in os.listdir(input_base_dir) if os.path.isdir(os.path.join(input_base_dir, d))])
     processed = []
@@ -272,3 +375,7 @@ if __name__ == "__main__":
     input_dir = os.path.expanduser(args.input_dir)
     output_dir = os.path.expanduser(args.output_dir)
     batch_preprocess(input_dir, output_dir, args.mapping_file, args.use_gamma, args.relax_filter, args.skip_plots)
+
+# TODO: Add gamma computation if use_gamma
+# TODO: Integrate pymedphys for DVH/gamma post-save
+# TODO: Dynamic target_shape based on dataset max extents
