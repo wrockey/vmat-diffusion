@@ -212,9 +212,7 @@
     "6": {
         "name": "femur_r",
         "variations": [
-            "Femur_L",
             "Femur_R",
-            "femurl",
             "femurr"
         ]
     },
