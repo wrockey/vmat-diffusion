@@ -26,6 +26,10 @@ processed_npz/
 *.npz
 *.nii
 *.nii.gz
+*.dcm
+*.DCM
+*.pth  # PyTorch models
+*.ckpt
 
 # Model checkpoints and logs
 models/
