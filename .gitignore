@@ -1,0 +1,52 @@
+# Python / Conda
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter / VS Code
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+.vscode/
+.history
+
+# Large data (never commit raw or processed medical imaging)
+data/
+data/raw/
+data/*.dcm
+data/*.DCM
+processed_npz/
+*.npz
+*.nii
+*.nii.gz
+
+# Model checkpoints and logs
+models/
+*.pth
+*.pt
+*.ckpt
+*.bin
+logs/
+wandb/
+tensorboard/
+
+# OS / temp files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Git
+.git
+.gitignore~  # Backup copies
+
+# Optional: ignore large downloads or caches
+downloads/
+cache/
