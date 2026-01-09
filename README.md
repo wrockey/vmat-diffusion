@@ -1,131 +1,323 @@
 # VMAT Diffusion Project
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](CHANGELOG.md)
 
 ## Project Overview
 
 This repository implements a generative AI model using diffusion techniques to create deliverable Volumetric Modulated Arc Therapy (VMAT) plans for radiation therapy. The core idea frames VMAT planning as a generative task analogous to AI image or video generation: Given a contoured CT dataset and organs-at-risk (OAR) dose constraints, the model samples a deliverable plan (dose distribution, arcs, MLC positions, dose rates) that meets clinical objectives while respecting linac physics.
 
+### Current Phase: Dose Prediction (Phase 1)
+
+The project is currently in **Phase 1**, focused on:
+- Generating anatomically-plausible dose distributions from CT + contours
+- Validating the diffusion model architecture on prostate VMAT cases
+- Establishing feasibility on ~100 cases locally before HPC scaling
+
+**Phase 2+** will add beam geometry extraction, MLC sequences, and full VMAT plan generation.
+
 ### Key Goals
+
 1. **Define the Problem and Objectives**  
    Frame as a Generative Task: In VMAT, the goal is to generate a plan that delivers prescribed doses to PTVs while minimizing OAR exposure, respecting linac physics (e.g., beam modulation limits). A diffusion model would learn the distribution of high-quality plans from data, then sample new ones conditionally.  
-   Analogous to image generation: CT scan + contours + dose constraints = "prompt"; output = dose distribution + beam parameters (like a generated image).  
-   Key Outputs: 3D dose volume (e.g., in DICOM RT format), arc angles, gantry speeds, MLC sequences, and fluence maps.  
-   Incorporate Physics: Integrate a beam model (e.g., from Pinnacle) to ensure deliverability, perhaps via a hybrid approach where the diffusion model predicts initial doses, then refines with Monte Carlo simulation approximations.  
-   Metrics for Success: Dose-volume histograms (DVHs), gamma pass rates (>95% at 3%/3mm), conformity index, and clinical acceptability (e.g., OAR doses below constraints like <20 Gy mean to lungs).
+   
+   Key Outputs: 3D dose volume (Phase 1), arc angles, gantry speeds, MLC sequences, and fluence maps (Phase 2+).  
+   
+   Metrics for Success: Dose-volume histograms (DVHs), gamma pass rates (>95% at 3%/3mm), conformity index, and clinical acceptability.
 
 2. **Gather and Prepare Data**  
-   Dataset Requirements: Need paired data: CT scans (HU values), segmented contours (PTV/OAR masks), dose objectives (e.g., 70 Gy to PTV, <45 Gy max to spinal cord), ground-truth dose distributions, and VMAT parameters (from optimized plans).  
-   Size: Aim for 1,000–10,000 cases initially; diffusion models thrive on large datasets.  
-   Sources: Public repositories like TCIA (The Cancer Imaging Archive), AAPM Grand Challenges (e.g., for head-and-neck or prostate VMAT), or institutional IRB-approved data. Augment with synthetic data generated via TPS simulations.  
-   Preprocessing:  
-   - Resample CTs to uniform voxel size (e.g., 1x1x3 mm).  
-   - Create multi-channel inputs: Stack CT slices, binary masks for PTVs/OARs, and signed distance maps (SDFs) to encode anatomical distances—useful for conditioning, as seen in distance-aware models.  
-   - Normalize doses (e.g., to [0,1] range) and handle class imbalances (e.g., high doses rare).  
-   Split: 80% train, 10% validation, 10% test, stratified by cancer site (e.g., prostate, lung) for generalizability.
+   Dataset Requirements: Paired CT scans, segmented contours (PTV/OAR masks), dose objectives, and ground-truth dose distributions.  
+   
+   Current Focus: Prostate VMAT with SIB (simultaneous integrated boost):
+   - PTV70: 70 Gy in 28 fractions (prostate)
+   - PTV56: 56 Gy in 28 fractions (seminal vesicles)
+   - PTV50.4: 50.4 Gy in 28 fractions (pelvic nodes, when present)
 
 3. **Design the Model Architecture**  
-   Base on Denoising Diffusion Probabilistic Models (DDPM): Use a conditional diffusion framework, like in DiffDP or DoseDiff, where the model learns to reverse a noise-adding process.  
-   Forward Process: Gradually add Gaussian noise to ground-truth dose distributions over T timesteps (e.g., T=1000), turning them into pure noise. This is fixed and doesn't require training.  
-   Reverse Process: Train a neural network (e.g., U-Net variant) to predict and remove noise at each step, conditioned on inputs. The network outputs denoised dose maps.  
-   Conditioning Mechanism: Embed CT, contours, and constraints into the model.  
-   - Use a multi-scale fusion encoder (e.g., CNN or Transformer) to process anatomy.  
-   - For VMAT specifics: Condition on beam fields or initial arc setups, as in beam-guided models. Optionally, extend to predict MLC sequences by treating them as additional channels.  
-   Advanced: Incorporate Mamba architecture for efficient long-range dependencies in 3D volumes. Or use score-based diffusion for therapeutic dose prediction.  
-   Hybrid Extensions: To ensure physical deliverability, couple with a differentiable TPS simulator (e.g., approximate Monte Carlo via neural surrogates) during reverse steps, penalizing undeliverable plans.  
-   Efficiency Tweaks: Use latent diffusion (compress data to lower dimensions) to reduce compute, similar to image gen optimizations.
+   Base on Denoising Diffusion Probabilistic Models (DDPM) with conditional 3D U-Net.
 
 4. **Train the Model**  
-   Hardware: Multi-GPU setup (e.g., 4x A100s) for 3D volumes; training could take days to weeks. Initially, establish feasibility on NVIDIA 3090 with ~100 cases, then scale to UIowa Argon HPC for 1000+.  
-   Loss Function: Standard diffusion loss (e.g., MSE between predicted and actual noise), plus radiotherapy-specific terms like DVH penalties or conformity losses to enforce clinical constraints.  
-   Regularization: Add physics-informed losses (e.g., beam energy conservation) to avoid hallucinations.  
-   Hyperparameters: Learning rate 1e-4, batch size 8–16 (memory-limited), scheduler like cosine annealing.  
-   Training Loop: For each batch, sample a timestep t, add noise to doses, feed conditioned inputs to the network, and optimize.  
-   Augmentations: Random rotations/flips of CTs to improve robustness.  
-   Monitor: Validate on held-out data with metrics like mean absolute error (MAE) on doses (<2 Gy).  
-   Iterative Refinement: Fine-tune on site-specific data (e.g., prostate VMAT) after general training.
+   Feasibility on NVIDIA 3090 (~100 cases), then scale to UIowa Argon HPC (1000+ cases).
 
 5. **Inference and Post-Processing**  
-   Generation: Start from noise, iteratively denoise over T steps (or fewer with sampling tricks like DDIM for speed). Condition on new patient CT/contours/constraints to output a dose and plan.  
-   Time: Aim for <5 minutes per plan, vs. hours for manual Monte Carlo.  
-   Make Deliverable: Post-optimize the predicted plan in a TPS (e.g., Pinnacle) to refine MLC/gantry parameters, ensuring linac compatibility.  
-   Safety Checks: Run Monte Carlo validation on generated plans; reject if gamma fails.
+   Fast sampling (DDIM), TPS refinement for deliverability.
 
 6. **Validate and Deploy**  
-   Evaluation: Retrospective testing on unseen patients; compare to expert plans via blind clinician reviews. Use metrics like OAR sparing improvement (e.g., 10–20% dose reduction).  
-   Challenges to Address:  
-   - Generalization: Handle anatomical variations; use diverse data.  
-   - Compute: Diffusion inference is slow—optimize with distillation or fewer steps.  
-   - Regulatory: FDA clearance needed; start with research prototypes, validate against standards like TG-119.  
-   - Ethics: Ensure no bias in datasets; prioritize patient safety.  
-   Deployment: Integrate into TPS software as a "one-click" tool, with human oversight. Ultimate aim: Scientific publications (e.g., MedPhys) and clinically useful product.
+   Retrospective testing, clinician review, publications.
+
+---
 
 ## Installation
 
 Clone the repository:
+
 ```bash
-git clone https://github.com/yourusername/vmat-diffusion-project.git
-cd vmat-diffusion-project
+git clone https://github.com/wrockey/vmat-diffusion.git
+cd vmat-diffusion
 ```
 
 Install dependencies (Python 3.8+):
+
 ```bash
 pip install -r requirements.txt
 ```
-Requirements include: pydicom, SimpleITK, numpy, scipy, scikit-image, matplotlib, pymedphys (for gamma/DVH), torch (for diffusion models).
 
-On UIowa Argon HPC: Use modules (e.g., `module load python/3.10`, `module load cuda/11.8`) and virtualenv. No internet access needed post-install; runs offline.
+**Requirements include:** pydicom, SimpleITK, numpy, scipy, scikit-image, matplotlib, pymedphys (for gamma/DVH), torch (for diffusion models).
 
-## Directory Structure
+**On UIowa Argon HPC:**
+```bash
+module load python/3.10
+module load cuda/11.8
+# Use virtualenv for dependencies
 ```
-vmat-diffusion-project/
-├── README.md               # This file
-├── requirements.txt        # Dependencies
-├── scripts/                # Core scripts
-│   └── preprocess_dicom_rt.py  # DICOM-RT to .npz preprocessing
-├── data/                   # Data directories (gitignore large files)
-│   ├── raw/                # Anonymized DICOM-RT (case_xxxx/CT/RS/RD/RP.dcm)
-│   └── processed_npz/      # Output .npz + debug PNGs
-├── oar_mapping.json        # Contour variations mapping
-├── docs/                   # Detailed documentation
-│   └── preprocess.md       # Preprocessing guide
-├── notebooks/              # Jupyter for verification/exploration
-│   └── verify_npz.ipynb    # Sample verification script
-├── models/                 # Future: DDPM models/checkpoints
-└── .gitignore              # Ignore data, .npz, etc.
-```
+
+---
 
 ## Quick Start
-1. Prepare data: Place anonymized DICOM-RT in `data/raw/case_xxxx`.
-2. Edit `oar_mapping.json` for contour variations (e.g., PTV70, rectum).
-3. Preprocess:
-   ```bash
-   python scripts/preprocess_dicom_rt.py --relax_filter
-   ```
-4. Verify outputs in `data/processed_npz` (e.g., via notebooks/verify_npz.ipynb).
-5. Train DDPM (forthcoming): Use processed .npz for conditional training on 3090, scale to Argon.
+
+### 1. Prepare Data
+
+Place anonymized DICOM-RT files in `data/raw/`:
+
+```
+data/raw/
+├── case_0001/
+│   ├── CT.*.dcm       # CT slices
+│   ├── RS.*.dcm       # Structure set
+│   ├── RD.*.dcm       # Dose grid
+│   └── RP.*.dcm       # RT Plan (recommended)
+├── case_0002/
+└── ...
+```
+
+### 2. Configure Structure Mapping
+
+Edit `oar_mapping.json` to add any institution-specific contour name variations.
+
+### 3. Preprocess
+
+```bash
+# Standard preprocessing (requires PTV70 + PTV56)
+python scripts/preprocess_dicom_rt_v2.py \
+    --input_dir ./data/raw \
+    --output_dir ./processed_npz
+
+# Include single-prescription cases
+python scripts/preprocess_dicom_rt_v2.py --relax_filter
+
+# Strict QA mode (recommended before HPC scaling)
+python scripts/preprocess_dicom_rt_v2.py --strict_validation
+```
+
+### 4. Verify Outputs
+
+```bash
+jupyter notebook notebooks/verify_npz.ipynb
+```
+
+The verification notebook provides:
+- Visual inspection of CT, dose, and contour alignment
+- Automated validation checks
+- DVH analysis
+- Batch validation across all cases
+
+### 5. Review Batch Summary
+
+```bash
+cat ./processed_npz/batch_summary.json
+```
+
+### 6. Train DDPM (Coming Soon)
+
+```bash
+# Forthcoming
+python scripts/train_ddpm.py --data_dir ./processed_npz
+```
+
+---
+
+## Directory Structure
+
+```
+vmat-diffusion/
+├── README.md                    # This file
+├── CHANGELOG.md                 # Version history
+├── requirements.txt             # Python dependencies
+├── oar_mapping.json             # Contour name variations
+│
+├── scripts/
+│   ├── preprocess_dicom_rt.py   # v1.0 preprocessing (deprecated)
+│   └── preprocess_dicom_rt_v2.py # v2.0 preprocessing (current)
+│
+├── notebooks/
+│   └── verify_npz.ipynb         # Data verification notebook
+│
+├── docs/
+│   ├── preprocessing_guide.md   # Preprocessing usage guide
+│   ├── preprocessing_assumptions.md # Known limitations
+│   └── verify_npz.md            # Notebook documentation
+│
+├── data/                        # Data directories (gitignored)
+│   ├── raw/                     # Anonymized DICOM-RT
+│   └── processed_npz/           # Output .npz files
+│
+├── models/                      # Future: DDPM checkpoints
+│
+└── .gitignore
+```
+
+---
+
+## Preprocessing Output
+
+Each `.npz` file contains:
+
+| Key | Shape | Description |
+|-----|-------|-------------|
+| `ct` | (512, 512, 256) | CT volume, normalized [0, 1] |
+| `dose` | (512, 512, 256) | Dose, normalized to prescription |
+| `masks` | (8, 512, 512, 256) | Binary structure masks |
+| `constraints` | (13,) | Prescription targets + OAR constraints |
+| `metadata` | dict | Case info, validation results |
+
+### Mask Channels
+
+| Channel | Structure |
+|---------|-----------|
+| 0 | PTV70 |
+| 1 | PTV56 |
+| 2 | Prostate |
+| 3 | Rectum |
+| 4 | Bladder |
+| 5 | Femur_L |
+| 6 | Femur_R |
+| 7 | Bowel |
+
+### SIB Case Types
+
+The preprocessing automatically classifies cases:
+- `single_rx`: PTV70 only (~10% of cases)
+- `sib_2level`: PTV70 + PTV56 (~70% of cases)
+- `sib_3level`: PTV70 + PTV56 + PTV50.4 (~20% of cases)
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [CHANGELOG.md](CHANGELOG.md) | Version history and migration guides |
+| [docs/preprocessing_guide.md](docs/preprocessing_guide.md) | Preprocessing script usage |
+| [docs/preprocessing_assumptions.md](docs/preprocessing_assumptions.md) | Known limitations and assumptions |
+| [docs/verify_npz.md](docs/verify_npz.md) | Verification notebook guide |
+
+---
 
 ## Scripts
-### preprocess_dicom_rt.py
-See [docs/preprocess.md](docs/preprocess.md) for details. In brief: Batch-converts DICOM-RT to fixed-shape .npz for DDPM input, handling variable grids via SimpleITK.
+
+### preprocess_dicom_rt_v2.py
+
+Converts DICOM-RT to `.npz` format with:
+- Automatic prescription extraction from RP file
+- SIB case type classification
+- Comprehensive validation checks
+- Rich metadata storage
+
+See [docs/preprocessing_guide.md](docs/preprocessing_guide.md) for details.
+
+**Key options:**
+```bash
+--relax_filter      # Process cases without PTV56
+--strict_validation # Fail on validation issues
+--skip_plots        # Skip debug PNG generation
+```
+
+### verify_npz.ipynb
+
+Interactive verification notebook with:
+- Visual inspection (axial, coronal, sagittal views)
+- Automated validation checks
+- DVH plotting
+- Batch validation
+
+See [docs/verify_npz.md](docs/verify_npz.md) for details.
+
+---
+
+## Validation Workflow
+
+### Before Training (~100 cases)
+
+1. Run preprocessing with defaults
+2. Review `batch_summary.json` for failures
+3. Run `verify_npz.ipynb` on 5-10 random cases
+4. Investigate any validation warnings
+
+### Before HPC Scaling (1000+ cases)
+
+1. Run with `--strict_validation`
+2. Batch validate all cases in notebook
+3. Document excluded cases with reasons
+4. Verify case type distribution
+
+---
 
 ## Contributing
-- Use GitHub issues for bugs/to-dos (label "enhancement" for features).
-- Pull requests: Follow PEP8; include tests.
-- For scaling to Argon: Submit SLURM jobs (example script in docs/argon_slurm.md, forthcoming).
 
-## To-Do / Roadmap
-- Implement DDPM trainer (Goal 4 feasibility on 3090).
-- Add pymedphys integration for DVH/gamma in validation.
-- Hybrid refinement script (Monte Carlo surrogates, Goal 3).
-- SLURM templates for Argon (1000+ cases).
-- Unit tests (pytest) for preprocessing.
-- Publications: Retrospective validation paper (e.g., MedPhys submission).
+- Use GitHub issues for bugs/features (label "enhancement" for features)
+- Pull requests: Follow PEP8; include tests
+- For Argon scaling: See `docs/argon_slurm.md` (forthcoming)
 
-See [issues](https://github.com/yourusername/vmat-diffusion-project/issues) for full roadmap.
+---
+
+## Roadmap
+
+### Phase 1: Dose Prediction (Current)
+- [x] DICOM-RT preprocessing with validation
+- [x] Verification notebook
+- [x] SIB case support
+- [ ] DDPM trainer implementation
+- [ ] Feasibility validation on ~100 cases
+
+### Phase 2: Deliverability
+- [ ] Beam geometry extraction from RP
+- [ ] MLC sequence extraction
+- [ ] Physics-informed loss functions
+- [ ] Hybrid Monte Carlo refinement
+
+### Phase 3: Scale and Validate
+- [ ] Scale to 1000+ cases on Argon HPC
+- [ ] Retrospective clinical validation
+- [ ] Publication (target: Medical Physics)
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+
+---
+
+## Citation
+
+If you use this work, please cite:
+
+```bibtex
+@software{vmat_diffusion,
+  title = {VMAT Diffusion: Conditional Diffusion Models for Radiation Therapy Planning},
+  author = {[Author]},
+  year = {2025},
+  url = {https://github.com/wrockey/vmat-diffusion}
+}
+```
+
+---
 
 ## License
-MIT License. For research purposes; clinical deployment requires FDA/IRB validation. Contact: your.email@example.com.
+
+MIT License. For research purposes; clinical deployment requires FDA/IRB validation.
+
+---
 
 ## Acknowledgments
-Inspired by DoseDiff/SegDiff papers. Tools: pydicom, SimpleITK, pymedphys. Data sources: TCIA/AAPM (cite appropriately).
+
+- Inspired by DoseDiff, DoseGAN, and related dose prediction literature
+- Tools: pydicom, SimpleITK, pymedphys
+- Data sources: TCIA, AAPM (cite appropriately)
+- Compute: University of Iowa Argon HPC
