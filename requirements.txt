@@ -1,0 +1,31 @@
+# VMAT Dose Prediction - Dependencies
+# Install with: pip install -r requirements.txt
+# Note: Install PyTorch first with CUDA support:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Deep Learning
+torch>=2.0.0
+torchvision
+pytorch-lightning>=2.0.0
+
+# Scientific Computing
+numpy
+scipy
+scikit-image
+
+# DICOM / Medical Imaging
+pydicom
+rt-utils
+SimpleITK
+
+# Evaluation (gamma analysis, DVH)
+pymedphys
+
+# Logging / Visualization
+tensorboard
+rich
+tqdm
+matplotlib
+
+# Development
+jupyter

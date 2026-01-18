@@ -1,3 +1,19 @@
+"""
+DEPRECATED: Use generate_oar_mapping.py instead.
+
+This script is kept for reference only. The new version includes:
+- Automatic structure classification
+- Better handling of naming variations
+- Scan mode to discover structure names
+- More robust normalization
+"""
+import warnings
+warnings.warn(
+    "generate_mapping_json.py is deprecated. Use generate_oar_mapping.py instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 import os
 import json
 import pydicom

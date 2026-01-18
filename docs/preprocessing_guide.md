@@ -1,389 +1,438 @@
-# Preprocessing Guide
+# VMAT Preprocessing Guide
 
 ## Overview
 
-The preprocessing pipeline converts DICOM-RT treatment plans into normalized `.npz` files suitable for training the VMAT diffusion model.
+This document describes the preprocessing pipeline that converts DICOM-RT data into the standardized `.npz` format required for model training.
 
-**Current Version:** 2.0.0  
-**Script:** `preprocess_dicom_rt_v2.py`
+**Script:** `preprocess_dicom_rt_v2.2.py`  
+**Version:** 2.2.0  
+**Output:** Phase 2-ready `.npz` files with full MLC data
 
 ---
 
 ## Quick Start
 
 ```bash
-# Basic usage
-python preprocess_dicom_rt_v2.py \
-    --input_dir ./data/raw \
-    --output_dir ./processed_npz
+# Single case
+python preprocess_dicom_rt_v2.2.py \
+    --input_dir /path/to/dicom/case \
+    --output_dir ./processed_npz \
+    --output_name case_0001
 
-# Include single-prescription cases (no PTV56)
-python preprocess_dicom_rt_v2.py --relax_filter
-
-# Strict QA mode (fail on validation issues)
-python preprocess_dicom_rt_v2.py --strict_validation
-
-# Fast mode for HPC (no debug images)
-python preprocess_dicom_rt_v2.py --skip_plots
+# Batch processing
+for dir in /path/to/all/cases/*/; do
+    name=$(basename "$dir")
+    python preprocess_dicom_rt_v2.2.py \
+        --input_dir "$dir" \
+        --output_dir ./processed_npz \
+        --output_name "$name"
+done
 ```
 
 ---
 
 ## Input Requirements
 
-### Directory Structure
-
-```
-data/raw/
-├── case_0001/
-│   ├── CT.1.2.3....dcm      # CT slices (multiple files)
-│   ├── RS.1.2.3....dcm      # Structure set (one file)
-│   ├── RD.1.2.3....dcm      # Dose grid (one file)
-│   └── RP.1.2.3....dcm      # RT Plan (one file, optional but recommended)
-├── case_0002/
-│   └── ...
-└── ...
-```
-
 ### Required DICOM Files
 
-| File Prefix | Type | Required | Used For |
-|-------------|------|----------|----------|
-| `CT.*` | CT Image | Yes | Anatomy |
-| `RS.*` | RT Structure Set | Yes | Contours |
-| `RD.*` | RT Dose | Yes | Dose distribution |
-| `RP.*` | RT Plan | Recommended | Prescription extraction |
+| File Type | Description | Required Keys |
+|-----------|-------------|---------------|
+| **CT** | CT image series | PixelData, ImagePositionPatient, etc. |
+| **RTSTRUCT** | Structure set | ROIContourSequence |
+| **RTDOSE** | Dose distribution | DoseGridScaling, PixelData |
+| **RTPLAN** | Treatment plan | BeamSequence (for MLC extraction) |
+
+### Expected Directory Structure
+
+```
+case_directory/
+├── CT.*.dcm           # CT slices (multiple files)
+├── RS.*.dcm           # Structure set (1 file)
+├── RD.*.dcm           # Dose file (1 file)
+└── RP.*.dcm           # Plan file (1 file)
+```
 
 ### Required Structures
 
-The following structures must be present in the RS file (name variations handled via `oar_mapping.json`):
+The following structures must be present (case-insensitive matching):
 
-| Structure | Required | Channel |
-|-----------|----------|---------|
-| PTV70 | Yes | 0 |
-| PTV56 | Yes* | 1 |
-| Prostate | No | 2 |
-| Rectum | Recommended | 3 |
-| Bladder | Recommended | 4 |
-| Femur_L | No | 5 |
-| Femur_R | No | 6 |
-| Bowel | No | 7 |
-
-*Use `--relax_filter` to process cases without PTV56
+| Structure | Aliases Recognized |
+|-----------|-------------------|
+| PTV70 | PTV_70, PTV70Gy, PTV 70, ptvhigh |
+| PTV56 | PTV_56, PTV56Gy, PTV 56, ptvlow |
+| Prostate | prostate, CTV, ctv_prostate |
+| Rectum | rectum, rect, rectal |
+| Bladder | bladder, blad |
+| Femur_L | femur_l, left_femur, femoral_l, l_femur |
+| Femur_R | femur_r, right_femur, femoral_r, r_femur |
+| Bowel | bowel, bowel_bag, small_bowel, large_bowel |
 
 ---
 
-## Output Structure
+## Output Format
 
-### .npz File Contents
-
-```python
-data = np.load('case_0001.npz', allow_pickle=True)
-
-# Arrays
-data['ct']          # (512, 512, 256) float32 - Normalized CT [0, 1]
-data['dose']        # (512, 512, 256) float32 - Normalized dose [0, ~1.1]
-data['masks']       # (8, 512, 512, 256) uint8 - Binary structure masks
-data['constraints'] # (13,) float32 - Conditioning vector
-
-# Metadata (new in v2.0)
-data['metadata']    # dict - Rich case information
-```
-
-### Metadata Structure
+### .npz File Contents (v2.2)
 
 ```python
+import numpy as np
+data = np.load('case.npz', allow_pickle=True)
+
+# Core arrays
+print(data['ct'].shape)          # (512, 512, 256)
+print(data['dose'].shape)        # (512, 512, 256)
+print(data['masks'].shape)       # (8, 512, 512, 256)
+print(data['masks_sdf'].shape)   # (8, 512, 512, 256)
+print(data['constraints'].shape) # (13,)
+
+# MLC arrays
+print(data['beam0_mlc_a'].shape) # (178, 60) typical
+print(data['beam0_mlc_b'].shape) # (178, 60) typical
+
+# Metadata
 metadata = data['metadata'].item()
-
-{
-    'case_id': 'case_0001',
-    'processed_date': '2025-01-09T14:30:00',
-    'prescription_info': {
-        'primary_dose': 70.0,           # Gy
-        'fractions': 28,
-        'dose_per_fraction': 2.5,       # Gy
-        'source': 'DoseReferenceSequence'  # or 'FractionGroupSequence' or 'default'
-    },
-    'case_type': {
-        'type': 'sib_2level',           # or 'single_rx' or 'sib_3level'
-        'ptv70_exists': True,
-        'ptv56_exists': True,
-        'ptv50_exists': False
-    },
-    'normalization_dose_gy': 70.0,
-    'target_shape': (512, 512, 256),
-    'target_spacing_mm': (1.0, 1.0, 2.0),
-    'validation': {
-        'ct_range_valid': True,
-        'dose_nonneg': True,
-        'ptv70_dose_mean': 0.98,
-        'registration_valid': True,
-        'all_critical_passed': True
-    },
-    'boundary_warnings': [],
-    'structure_channels': {0: 'PTV70', 1: 'PTV56', ...}
-}
+print(metadata.keys())
 ```
 
-### Constraints Vector Structure
+### Array Specifications
 
-```python
-constraints = data['constraints']  # Shape: (13,)
+| Array | Shape | Dtype | Range | Description |
+|-------|-------|-------|-------|-------------|
+| `ct` | (512, 512, 256) | float32 | [0, 1] | Normalized CT |
+| `dose` | (512, 512, 256) | float32 | [0, ~1.1] | Dose / Rx |
+| `masks` | (8, 512, 512, 256) | uint8 | {0, 1} | Binary masks |
+| `masks_sdf` | (8, 512, 512, 256) | float32 | [-1, 1] | Signed distance fields |
+| `constraints` | (13,) | float32 | [0, ~1.1] | Planning constraints |
+| `beam*_mlc_a/b` | (n_cp, n_leaves) | float32 | [-200, 200] mm | MLC positions |
 
-# Indices 0-2: Prescription targets (normalized to primary Rx)
-constraints[0]  # PTV70 target: 1.0 if exists, else 0.0
-constraints[1]  # PTV56 target: 0.8 (56/70) if exists, else 0.0
-constraints[2]  # PTV50.4 target: 0.72 (50.4/70) if exists, else 0.0
+### Coordinate System
 
-# Indices 3-12: OAR constraints (normalized)
-constraints[3]  # Rectum V50 (fraction)
-constraints[4]  # Rectum V60 (fraction)
-constraints[5]  # Rectum V70 (fraction)
-constraints[6]  # Rectum max (normalized to Rx)
-constraints[7]  # Bladder V65 (fraction)
-constraints[8]  # Bladder V70 (fraction)
-constraints[9]  # Bladder V75 (fraction)
-constraints[10] # Femur V50 (fraction)
-constraints[11] # Bowel V45 (normalized)
-constraints[12] # Spinal cord max (normalized to Rx)
-```
-
-### Debug Outputs
-
-```
-processed_npz/
-├── case_0001.npz           # Preprocessed data
-├── debug_case_0001.png     # 2x3 visualization grid
-├── case_0002.npz
-├── debug_case_0002.png
-└── batch_summary.json      # Batch processing summary
-```
+- **Origin**: Centered on Prostate/PTV70 centroid
+- **Axes**: 
+  - X: Patient left (+) to right (-)
+  - Y: Patient anterior (+) to posterior (-)
+  - Z: Patient superior (+) to inferior (-)
+- **Spacing**: 1.0 × 1.0 × 2.0 mm (fixed)
+- **Grid**: 512 × 512 × 256 voxels
 
 ---
 
-## Normalization Details
+## Processing Steps
 
-### CT Normalization
-
-```python
-ct_normalized = np.clip(ct_hu, -1000, 3000) / 4000 + 0.5
-```
-
-| HU Value | Tissue | Normalized |
-|----------|--------|------------|
-| -1000 | Air | 0.0 |
-| 0 | Water | 0.5 |
-| +1000 | Soft tissue/bone | 0.75 |
-| +3000 | Dense bone | 1.0 |
-
-**To recover HU:**
-```python
-ct_hu = (ct_normalized - 0.5) * 4000
-```
-
-### Dose Normalization
+### 1. DICOM Loading
 
 ```python
-dose_normalized = dose_gy / prescription_dose_gy
+# CT loading
+ct_volume = load_ct_series(ct_files)
+ct_spacing = get_spacing(ct_files[0])
+
+# Structure loading via rt-utils
+rtstruct = RTStructBuilder.create_from(dicom_path, rt_struct_path)
+mask = rtstruct.get_roi_mask_by_name(structure_name)
+
+# Dose loading
+dose = dcmread(dose_file)
+dose_volume = dose.pixel_array * dose.DoseGridScaling
 ```
 
-**v2.0 change:** Prescription is now extracted from RP file, not hardcoded.
+### 2. Resampling
 
-| Dose (Gy) | Normalized (70 Gy Rx) |
-|-----------|----------------------|
-| 0 | 0.0 |
-| 56 | 0.8 |
-| 70 | 1.0 |
-| 77 | 1.1 (hotspot) |
+All volumes resampled to fixed grid:
 
-**To recover Gy:**
 ```python
-prescription = metadata['normalization_dose_gy']
-dose_gy = dose_normalized * prescription
+OUTPUT_SHAPE = (512, 512, 256)
+OUTPUT_SPACING = (1.0, 1.0, 2.0)  # mm
+
+# Using scipy.ndimage.zoom
+zoom_factors = original_spacing / output_spacing * original_shape / output_shape
+ct_resampled = zoom(ct_volume, zoom_factors, order=1)      # Linear
+dose_resampled = zoom(dose_volume, zoom_factors, order=1)  # Linear
+mask_resampled = zoom(mask_volume, zoom_factors, order=0)  # Nearest
 ```
 
----
+### 3. Centering
 
-## Validation Checks
+Volume centered on prostate/PTV70 centroid:
 
-The v2.0 script performs these checks before saving:
-
-| Check | Pass Criteria | Failure Impact |
-|-------|---------------|----------------|
-| `ct_range_valid` | CT in [0, 1] | Normalization error |
-| `dose_nonneg` | Dose ≥ -0.01 | Interpolation artifact |
-| `dose_reasonable` | Max < 1.5 | Hotspot or scaling error |
-| `ptv70_exists` | Voxels > 0 | Missing contour |
-| `ptv70_dose_adequate` | Mean 0.85-1.15 | Wrong Rx or registration |
-| `registration_valid` | Dose in PTV > outside | **Critical**: Misalignment |
-
-### Strict Mode
-
-With `--strict_validation`, cases that fail any critical check are skipped:
-
-```bash
-python preprocess_dicom_rt_v2.py --strict_validation
-```
-
-### Validation Results
-
-Check validation in the notebook:
 ```python
-metadata = data['metadata'].item()
-print(f"Passed: {metadata['validation']['all_critical_passed']}")
-print(f"PTV70 dose: {metadata['validation']['ptv70_dose_mean']:.3f}")
+# Find centroid
+centroid = np.array(np.where(prostate_mask > 0)).mean(axis=1)
+
+# Shift to center
+shift = np.array(OUTPUT_SHAPE) // 2 - centroid
+ct_centered = ndimage.shift(ct_resampled, shift)
+```
+
+### 4. CT Normalization
+
+```python
+# Clip to soft tissue range
+ct_clipped = np.clip(ct_volume, -1000, 2000)  # HU
+
+# Normalize to [0, 1]
+ct_normalized = (ct_clipped - (-1000)) / (2000 - (-1000))
+```
+
+### 5. Dose Normalization
+
+```python
+# Normalize to prescription dose
+prescription_gy = extract_prescription(rtplan)  # e.g., 70.0 Gy
+dose_normalized = dose_volume / prescription_gy
+
+# Result: PTV70 should have mean ~1.0
+```
+
+### 6. SDF Computation
+
+Signed Distance Fields provide smooth gradients for neural network training:
+
+```python
+from scipy.ndimage import distance_transform_edt
+
+def compute_sdf(binary_mask, spacing=(1.0, 1.0, 2.0), clip_mm=50.0):
+    # Distance outside structure (positive)
+    dist_outside = distance_transform_edt(~binary_mask, sampling=spacing)
+    
+    # Distance inside structure (negative)
+    dist_inside = distance_transform_edt(binary_mask, sampling=spacing)
+    
+    # Combine: negative inside, positive outside
+    sdf = dist_outside - dist_inside
+    
+    # Clip and normalize to [-1, 1]
+    sdf = np.clip(sdf, -clip_mm, clip_mm) / clip_mm
+    
+    return sdf.astype(np.float32)
+```
+
+**SDF Properties:**
+- Inside structure: negative values (approaching -1 at center)
+- Outside structure: positive values (approaching +1 far away)
+- At boundary: zero
+- Smooth gradients everywhere (unlike binary step function)
+
+### 7. Constraint Extraction
+
+```python
+def extract_constraints(dose, masks, prescription):
+    constraints = np.zeros(13, dtype=np.float32)
+    
+    # PTV targets
+    constraints[0] = 1.0 if masks['PTV70'].any() else 0.0
+    constraints[1] = 56/70 if masks['PTV56'].any() else 0.0
+    constraints[2] = 50.4/70 if masks['PTV50.4'].any() else 0.0
+    
+    # Rectum DVH constraints
+    rectum = masks['Rectum']
+    constraints[3] = (dose[rectum] >= 50/prescription).mean()  # V50
+    constraints[4] = (dose[rectum] >= 60/prescription).mean()  # V60
+    constraints[5] = (dose[rectum] >= 70/prescription).mean()  # V70
+    constraints[6] = dose[rectum].max()  # Dmax
+    
+    # ... similar for bladder, femur, bowel
+    
+    return constraints
+```
+
+### 8. MLC Extraction
+
+```python
+def extract_mlc_data(rtplan):
+    for beam in rtplan.BeamSequence:
+        if beam.TreatmentDeliveryType != 'TREATMENT':
+            continue
+            
+        mlc_a_positions = []
+        mlc_b_positions = []
+        
+        for cp in beam.ControlPointSequence:
+            # Find MLC device
+            for device in cp.BeamLimitingDevicePositionSequence:
+                if 'MLC' in device.RTBeamLimitingDeviceType:
+                    positions = device.LeafJawPositions
+                    n_leaves = len(positions) // 2
+                    
+                    # Bank A (leaves 0 to n-1)
+                    mlc_a_positions.append(positions[:n_leaves])
+                    
+                    # Bank B (leaves n to 2n-1)
+                    mlc_b_positions.append(positions[n_leaves:])
+        
+        mlc_a = np.array(mlc_a_positions, dtype=np.float32)
+        mlc_b = np.array(mlc_b_positions, dtype=np.float32)
+        
+        return mlc_a, mlc_b  # Shape: (n_control_points, n_leaves)
 ```
 
 ---
 
 ## Command Line Options
 
+### Required
+
+| Option | Description |
+|--------|-------------|
+| `--input_dir` | Path to DICOM directory |
+| `--output_dir` | Output directory for .npz files |
+| `--output_name` | Output filename (without .npz) |
+
+### Optional - Processing
+
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--input_dir` | `~/vmat-diffusion-project/data/raw` | Input directory with case folders |
-| `--output_dir` | `~/vmat-diffusion-project/processed_npz` | Output directory for .npz files |
-| `--mapping_file` | `oar_mapping.json` | Structure name mapping file |
-| `--relax_filter` | False | Process cases without PTV56 |
-| `--skip_plots` | False | Skip debug PNG generation |
-| `--strict_validation` | False | Fail cases with validation issues |
+| `--no_sdf` | False | Skip SDF computation |
+| `--no_beams` | False | Skip beam geometry extraction |
+| `--sdf_clip_mm` | 50.0 | SDF clip distance in mm |
+
+### Optional - Validation
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--strict_validation` | False | Fail on validation warnings |
+| `--skip_plots` | False | Skip visualization plots |
+
+### Optional - Override
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--prescription_gy` | Auto | Override prescription dose |
+| `--force` | False | Overwrite existing output |
+
+---
+
+## Validation Checks
+
+The script performs these validation checks:
+
+### 1. CT Validation
+- Range check: Values should be in [0, 1] after normalization
+- HU range tracking: Original range logged for reference
+
+### 2. Dose Validation
+- Non-negativity: All dose values >= 0
+- PTV70 mean: Should be approximately 1.0 (normalized)
+- Maximum dose: Logged for reference
+
+### 3. Structure Validation
+- All required structures present
+- Non-empty masks (at least 1 voxel)
+- Boundary truncation < 10% of structure
+
+### 4. Registration Validation
+- Mean dose in PTV70 > mean dose outside PTV70
+- Detects potential misregistration between dose and structures
+
+### 5. SDF Validation
+- Inside voxels have negative SDF
+- Outside voxels have positive SDF
+- Boundary voxels near zero
 
 ---
 
 ## Troubleshooting
 
-### "No RP file found, using default prescription"
+### Missing Structures
 
-**Cause:** RT Plan file missing from case directory.
+```
+ERROR: Required structure 'PTV70' not found
+Available structures: ['PTV_High', 'CTV', 'Rectum', ...]
+```
 
-**Impact:** Prescription defaults to 70 Gy. May be incorrect for non-standard cases.
+**Solution:** The script searches for common aliases. Add your structure name to the alias list in the script, or rename structures in the DICOM.
 
-**Solution:** Ensure RP.*.dcm file is present, or verify 70 Gy is correct.
+### Dose-Structure Misregistration
 
-### "Prescription X Gy differs from expected 70 Gy"
+```
+WARNING: Registration validation failed
+  Mean dose in PTV70: 0.45
+  Mean dose outside: 0.52
+```
 
-**Cause:** Extracted prescription doesn't match expected value.
+**Solution:** Check that RTDOSE and RTSTRUCT reference the same CT series. May need to re-export from TPS.
 
-**Impact:** Warning only. Dose normalized to extracted value.
+### Boundary Truncation
 
-**Action:** Verify this case should be included in the cohort.
+```
+WARNING: Structure 'Bowel' truncated at boundary
+  Truncation: 15.3% of voxels at edge
+```
 
-### "Skipping case: Missing PTV70"
+**Solution:** This is informational. Some truncation is expected for large structures. The `truncation_info` in metadata tracks this.
 
-**Cause:** No contour matching PTV70 variations found.
+### Memory Issues
 
-**Solution:** 
-1. Check structure names in RS file
-2. Add variation to `oar_mapping.json`
-
-### "Skipping case: Missing PTV56"
-
-**Cause:** Single-prescription case without PTV56.
-
-**Solution:** Use `--relax_filter` to include these cases.
-
-### "CRITICAL: Registration check failed"
-
-**Cause:** Mean dose outside PTV is higher than inside.
-
-**Impact:** Data unusable - CT and dose grids misaligned.
-
-**Solution:**
-1. Check dose grid origin in RD file
-2. Verify GridFrameOffsetVector
-3. Compare with TPS visualization
-
-### "Structure touches boundary"
-
-**Cause:** Structure extends to edge of resampled grid.
-
-**Impact:** 
-- Femoral heads: Usually acceptable
-- PTV/Rectum/Bladder: May need larger grid
-
-**Solution:** Review in notebook; consider grid expansion if critical.
-
----
-
-## Migration from v1.0
-
-### Key Differences
-
-| Aspect | v1.0 | v2.0 |
-|--------|------|------|
-| Dose normalization | Hardcoded /70.0 | Extracted from RP |
-| Constraints | Fixed AAPM values | Case-specific + Rx targets |
-| Metadata | None | Rich dict with validation |
-| Validation | None | Comprehensive checks |
-| SIB handling | Implicit | Explicit case type |
-
-### Migration Steps
-
-1. **Re-run preprocessing**
-   ```bash
-   python preprocess_dicom_rt_v2.py --input_dir ./data/raw --output_dir ./processed_npz_v2
-   ```
-
-2. **Update data loading**
-   ```python
-   # Add allow_pickle=True for metadata
-   data = np.load('case.npz', allow_pickle=True)
-   metadata = data['metadata'].item()
-   ```
-
-3. **Update constraints usage**
-   ```python
-   # First 3 elements are now prescription targets
-   ptv70_target = constraints[0]  # 1.0 or 0.0
-   ptv56_target = constraints[1]  # 0.8 or 0.0
-   ```
-
-4. **Verify with notebook**
-   ```bash
-   jupyter notebook notebooks/verify_npz.ipynb
-   ```
-
----
-
-## Best Practices
-
-### Before Training (~100 cases)
-
-1. Run preprocessing with defaults
-2. Run `verify_npz.ipynb` on 5-10 random cases
-3. Check batch_summary.json for failures
-4. Investigate any validation warnings
-
-### Before HPC Scaling (1000+ cases)
-
-1. Run with `--strict_validation`
-2. Batch validate all cases with notebook
-3. Document any excluded cases
-4. Verify case type distribution matches expectations
-
-### Recommended Workflow
-
+For very large CT series:
 ```bash
-# Step 1: Initial run
-python preprocess_dicom_rt_v2.py --input_dir ./data/raw --output_dir ./processed_npz
-
-# Step 2: Review summary
-cat ./processed_npz/batch_summary.json
-
-# Step 3: Investigate failures (if any)
-# Check debug PNGs and re-run individual cases
-
-# Step 4: Validate in notebook
-jupyter notebook notebooks/verify_npz.ipynb
-
-# Step 5: Production run for HPC
-python preprocess_dicom_rt_v2.py --strict_validation --skip_plots
+# Process with lower memory usage
+python preprocess_dicom_rt_v2.2.py \
+    --input_dir ./case \
+    --output_dir ./output \
+    --output_name case \
+    --skip_plots
 ```
 
 ---
 
-## References
+## Output Verification
 
-- [CHANGELOG.md](../CHANGELOG.md) - Version history
-- [preprocessing_assumptions.md](preprocessing_assumptions.md) - Known limitations
-- [verify_npz.md](verify_npz.md) - Notebook documentation
-- [oar_mapping.json](../oar_mapping.json) - Structure name mappings
+Use the provided notebook to verify preprocessing:
+
+```bash
+jupyter notebook verify_npz.ipynb
+```
+
+Or quick command-line check:
+
+```python
+import numpy as np
+
+data = np.load('case.npz', allow_pickle=True)
+
+# Check shapes
+print(f"CT: {data['ct'].shape}")           # (512, 512, 256)
+print(f"Dose: {data['dose'].shape}")       # (512, 512, 256)
+print(f"Masks: {data['masks'].shape}")     # (8, 512, 512, 256)
+print(f"SDFs: {data['masks_sdf'].shape}")  # (8, 512, 512, 256)
+
+# Check ranges
+print(f"CT range: [{data['ct'].min():.2f}, {data['ct'].max():.2f}]")     # [0, 1]
+print(f"Dose range: [{data['dose'].min():.2f}, {data['dose'].max():.2f}]") # [0, ~1.1]
+
+# Check metadata
+meta = data['metadata'].item()
+print(f"Prescription: {meta['prescription_gy']} Gy")
+print(f"Script version: {meta['script_version']}")
+print(f"Beams: {len(meta['beam_geometry']['beams'])}")
+
+# Check MLC data
+if 'beam0_mlc_a' in data.files:
+    print(f"MLC shape: {data['beam0_mlc_a'].shape}")  # (178, 60) typical
+```
+
+---
+
+## Version History
+
+| Version | Changes |
+|---------|---------|
+| 2.2.0 | Full MLC extraction, compressed npz, Phase 2 ready |
+| 2.1.1 | SDF validation, configurable clip distance |
+| 2.1.0 | SDFs, beam geometry, enhanced validation |
+| 2.0.0 | SIB support, constraints vector, major rewrite |
+| 1.0.0 | Initial implementation |
+
+---
+
+## File Size Reference
+
+| Content | Approximate Size |
+|---------|-----------------|
+| CT (512×512×256 float32) | 256 MB |
+| Dose (512×512×256 float32) | 256 MB |
+| Masks (8×512×512×256 uint8) | 512 MB |
+| SDFs (8×512×512×256 float32) | 2 GB |
+| MLC data | ~1 MB |
+| **Total uncompressed** | **~3 GB** |
+| **Total compressed (.npz)** | **~400-500 MB** |
+
+Compression ratio is approximately 6:1 due to sparse structure masks and smooth SDF fields.

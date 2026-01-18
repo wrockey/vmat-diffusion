@@ -23,6 +23,8 @@ data/raw/
 data/*.dcm
 data/*.DCM
 processed_npz/
+processed/
+processed_old*/
 *.npz
 *.nii
 *.nii.gz
@@ -30,6 +32,12 @@ processed_npz/
 *.DCM
 *.pth  # PyTorch models
 *.ckpt
+
+# Training outputs
+runs/
+predictions/
+figures/*.png
+figures/*.pdf
 
 # Model checkpoints and logs
 models/
@@ -46,6 +54,8 @@ tensorboard/
 Thumbs.db
 *.tmp
 *.log
+*:Zone.Identifier
+*.Zone.Identifier
 
 # Git
 .git

@@ -1,303 +1,239 @@
-# Preprocessing Assumptions and Limitations
+# Preprocessing Assumptions and Requirements
 
-## Document Purpose
-
-This document explicitly states the assumptions, limitations, and known issues in the `preprocess_dicom_rt.py` script. Understanding these is critical before training the diffusion model or scaling to HPC.
-
-**Last Updated:** January 2025  
-**Phase:** 1 (Dose Prediction)
+This document lists all assumptions made by the preprocessing pipeline. Data that violates these assumptions may produce incorrect results or errors.
 
 ---
 
-## Phase 1 Scope
+## Treatment Protocol Assumptions
 
-The current preprocessing is designed for **Phase 1: Dose Prediction**, which aims to:
-- Generate anatomically-plausible dose distributions from CT + contours
-- Validate the diffusion model architecture on prostate VMAT cases
-- Establish feasibility before adding beam/MLC parameters
+### Disease Site
+- **Prostate cancer** (intact prostate, not post-prostatectomy)
+- May include seminal vesicles in PTV
 
-**Phase 1 does NOT include:**
-- Beam geometry extraction (arc angles, MU, collimator)
-- MLC leaf sequences
-- Fluence maps
-- Full VMAT plan generation
+### Fractionation
+- **28 fractions** standard
+- SIB (Simultaneous Integrated Boost) protocol:
+  - PTV70: 70 Gy in 28 fx (2.5 Gy/fx)
+  - PTV56: 56 Gy in 28 fx (2.0 Gy/fx)
+  - PTV50.4: 50.4 Gy in 28 fx (1.8 Gy/fx) - if applicable
 
-These will be added in Phase 2+ via modular append scripts (no re-preprocessing required).
+### Treatment Technique
+- **VMAT** (Volumetric Modulated Arc Therapy)
+- Typically 2 full arcs (clockwise + counter-clockwise)
+- Single isocenter
+- 6 MV photons (some cases may use 10 MV)
 
 ---
 
-## Critical Assumptions
+## Structure Assumptions
 
-### 1. Dose Normalization
+### Required Structures (8 channels)
 
-**Current Implementation:**
+| Channel | Structure | Required | Notes |
+|---------|-----------|----------|-------|
+| 0 | PTV70 | **Yes** | High-dose PTV |
+| 1 | PTV56 | Yes* | *Can be empty if not SIB |
+| 2 | Prostate | **Yes** | Used for centering |
+| 3 | Rectum | **Yes** | - |
+| 4 | Bladder | **Yes** | - |
+| 5 | Femur_L | Recommended | May be absent |
+| 6 | Femur_R | Recommended | May be absent |
+| 7 | Bowel | Recommended | May be absent |
+
+### Structure Naming
+
+The script searches for common aliases (case-insensitive):
+
 ```python
-dose_volume = sitk.GetArrayFromImage(dose_resampled).transpose(1, 2, 0) / 70.0
-```
-
-**Assumption:** All cases have a primary prescription of 70 Gy to PTV70.
-
-**Limitation:** For SIB cases with PTV56 (56 Gy) or PTV50.4 (50.4 Gy), these regions will have normalized values of ~0.8 and ~0.72 respectively. The model must learn that these are "correctly dosed" rather than "underdosed."
-
-**Impact:**
-- Model sees PTV56 at ~0.8 normalized dose
-- Model sees PTV50.4 at ~0.72 normalized dose
-- Without explicit prescription encoding, model cannot distinguish between "56 Gy target" and "underdosed 70 Gy target"
-
-**Mitigation (Recommended):**
-```python
-# Store prescription metadata
-prescription_info = {
-    'primary_rx': 70.0,
-    'ptv56_rx': 56.0 if ptv56_exists else None,
-    'ptv50_rx': 50.4 if ptv50_exists else None,
+STRUCTURE_ALIASES = {
+    'PTV70': ['ptv70', 'ptv_70', 'ptv70gy', 'ptv 70', 'ptvhigh', 'ptv_high'],
+    'PTV56': ['ptv56', 'ptv_56', 'ptv56gy', 'ptv 56', 'ptvlow', 'ptv_low', 'ptv_intermediate'],
+    'Prostate': ['prostate', 'ctv', 'ctv_prostate', 'gland'],
+    'Rectum': ['rectum', 'rect', 'rectal', 'rectum_wall'],
+    'Bladder': ['bladder', 'blad', 'bladder_wall'],
+    'Femur_L': ['femur_l', 'left_femur', 'femoral_l', 'l_femur', 'lt_femur', 'fem_l'],
+    'Femur_R': ['femur_r', 'right_femur', 'femoral_r', 'r_femur', 'rt_femur', 'fem_r'],
+    'Bowel': ['bowel', 'bowel_bag', 'small_bowel', 'large_bowel', 'bowel_cavity'],
 }
-np.savez(..., prescription_info=prescription_info)
 ```
 
-**TODO:** Extract actual prescription from RP file `DoseReferenceSequence` or `FractionGroupSequence`.
+### Structure Geometry
+
+- Structures should be **closed contours** (not open lines)
+- Structures should **not extend beyond CT FOV** significantly
+- PTV should be **inside the body** (not extending into air)
 
 ---
 
-### 2. Fixed Output Grid
+## Dose Assumptions
 
-**Current Implementation:**
-```python
-target_shape = (512, 512, 256)
-target_spacing = (1.0, 1.0, 2.0)  # mm
-```
+### Dose Grid
+- 3D dose distribution covering PTV with margin
+- May be lower resolution than CT (common: 2.5-3mm)
+- Will be resampled to 1×1×2mm
 
-**Physical Coverage:**
-- X (Left-Right): 512 mm
-- Y (Anterior-Posterior): 512 mm  
-- Z (Superior-Inferior): 512 mm
+### Dose Values
+- **Physical dose** (not biologically corrected)
+- In **Gy** after applying DoseGridScaling
+- **Sum of all beams/arcs** (not individual beam doses)
 
-**Assumption:** 512 mm FOV centered on prostate is sufficient for all pelvic anatomy.
+### Prescription
+- Prescription extracted from RTPLAN DoseReferenceSequence
+- If not found, falls back to maximum dose in PTV70 × 1.02
+- Can be overridden with `--prescription_gy`
 
-**Known Risks:**
-- Large patients may have femoral heads cropped
-- Extended pelvic node cases (PTV50.4) may have superior nodes cropped
-- Bladder superior extent may be truncated if very full
-
-**Validation:** The `verify_npz.ipynb` notebook includes boundary truncation checks.
-
-**Acceptable Truncations:**
-- Femoral head edges (not dose-relevant)
-- Bowel superior extent (if outside treatment field)
-
-**Unacceptable Truncations:**
-- PTV70 or PTV56
-- Rectum
-- Bladder (if clinically relevant portion)
+### Expected Dose Characteristics
+- PTV70 mean dose: ~70 Gy (normalized to ~1.0)
+- PTV70 D95: >66.5 Gy (>95% prescription)
+- Hot spots: <107% of prescription (75 Gy)
+- OAR doses: Within clinical constraints
 
 ---
 
-### 3. Grid Centering
+## CT Assumptions
 
-**Current Implementation:**
-```python
-# Center on prostate (or PTV70 if prostate not contoured)
-prostate_mask = masks[2] if masks[2].sum() > 0 else masks[0]
-centroid_phys_x = np.mean(phys_x)  # Physical centroid
-centroid_phys_y = np.mean(phys_y)
-centroid_phys_z = np.mean(phys_z)
-```
+### Acquisition
+- **Helical CT** with patient supine
+- **Treatment planning CT** (not diagnostic)
+- Includes **full pelvis** (L4 to below ischial tuberosities)
 
-**Assumption:** Centering on prostate/PTV70 captures all relevant anatomy.
+### Technical Parameters
+- Slice thickness: 2-3 mm typical
+- In-plane resolution: ~1 mm typical
+- Field of view: Includes entire pelvis
+- HU range: -1000 (air) to +3000 (bone/metal)
 
-**Limitation:** If prostate is positioned asymmetrically (e.g., shifted left), the resampled grid may crop contralateral structures.
-
----
-
-### 4. CT Normalization
-
-**Current Implementation:**
-```python
-ct_volume = np.clip(ct_array, -1000, 3000) / 4000 + 0.5
-```
-
-**Mapping:**
-| HU Value | Tissue | Normalized |
-|----------|--------|------------|
-| -1000 | Air | 0.0 |
-| 0 | Water | 0.5 |
-| +3000 | Dense bone | 1.0 |
-
-**Limitation:** HU > 3000 (metal implants, fiducials) will be clipped.
-
-**Impact:** Hip prostheses or fiducial markers will appear as uniform dense bone. This is generally acceptable for diffusion model training but may affect dose calculation accuracy in hybrid physics extensions.
+### Artifacts
+- **No significant metal artifacts** in treatment region
+- Minor hip prosthesis artifacts may be acceptable if away from PTV
+- Table should not be in the CT data (or will be clipped)
 
 ---
 
-### 5. Constraints Vector
+## Geometric Assumptions
 
-**Current Implementation:**
-```python
-AAPM_CONSTRAINTS = np.array([
-    70.0,  # PTV70 mean (Gy)
-    50.0,  # Rectum V50 (%)
-    35.0,  # Rectum V60 (%)
-    20.0,  # Rectum V70 (%)
-    50.0,  # Bladder V65 (%)
-    35.0,  # Bladder V70 (%)
-    25.0,  # Bladder V75 (%)
-    10.0,  # Femur V50 (%)
-    195.0, # Bowel V45 (cc)
-    45.0   # Spinal cord max (Gy)
-]) / 100.0
+### Patient Position
+- **Head-first supine (HFS)**
+- Standard DICOM coordinate system
 
-ptv_type = np.array([1.0, 0.0, 0.0])
-constraints = np.concatenate([AAPM_CONSTRAINTS, ptv_type])
-```
+### Field of View
+- CT FOV should include:
+  - All target structures (PTV70, PTV56, Prostate)
+  - All OARs (Rectum, Bladder, Femurs, Bowel)
+  - At least 5cm margin around PTV in all directions
 
-**Assumption:** All cases use identical AAPM/QUANTEC constraints.
-
-**Limitations:**
-1. Constraints are fixed, not case-specific
-2. Model cannot learn constraint-conditional generation
-3. `ptv_type` vector meaning is undefined
-4. DVH constraints (V50, V60) are scalars, not curves
-5. Absolute vs. relative volumes mixed (cc vs. %)
-
-**Impact:** The model will learn unconditional dose prediction for "typical prostate VMAT" rather than constraint-driven optimization.
-
-**Phase 2 TODO:** Extract case-specific constraints from RP file and encode properly.
+### Centering
+- Output volume centered on **Prostate/PTV70 centroid**
+- If prostate extends beyond output grid, truncation will occur
+- Truncation percentage is logged and stored in metadata
 
 ---
 
-### 6. Missing Beam Parameters
+## DICOM Assumptions
 
-**Not Currently Extracted:**
-- Arc start/stop angles
-- Gantry rotation direction (CW/CCW)
-- Collimator angles
-- Couch angles
-- Number of arcs
-- MU per arc
-- MLC leaf positions
-- Control point sequences
+### File Organization
+- All files for one patient in **single directory** or subdirectories
+- CT series: Multiple .dcm files (one per slice)
+- RTSTRUCT: Single .dcm file
+- RTDOSE: Single .dcm file
+- RTPLAN: Single .dcm file
 
-**Impact:** Cannot train for deliverable VMAT plan generation in Phase 1.
+### DICOM Compliance
+- Files should be **valid DICOM** (not proprietary formats)
+- Required DICOM tags must be present:
+  - CT: PixelData, ImagePositionPatient, ImageOrientationPatient, PixelSpacing, SliceThickness
+  - RTSTRUCT: ROIContourSequence, StructureSetROISequence
+  - RTDOSE: PixelData, DoseGridScaling, GridFrameOffsetVector
+  - RTPLAN: BeamSequence, DoseReferenceSequence
 
-**Phase 2 Plan:** Add `extract_beam_geometry()` function to pull from RP file `BeamSequence` and `ControlPointSequence`.
-
----
-
-### 7. Interpolation Methods
-
-**Current Implementation:**
-| Data | Interpolator | Rationale |
-|------|--------------|-----------|
-| CT | `sitkLinear` | Smooth HU gradients |
-| Dose | `sitkLinear` | Smooth dose gradients |
-| Masks | `sitkNearestNeighbor` | Preserve binary boundaries |
-
-**Known Issue:** Linear interpolation of dose may create small negative values at sharp gradients.
-
-**Mitigation:**
-```python
-dose_volume = np.maximum(dose_volume, 0)  # Clip negative artifacts
-```
+### References
+- RTSTRUCT must reference the CT series
+- RTDOSE must reference the RTPLAN
+- All files should share the same FrameOfReferenceUID
 
 ---
 
-### 8. Coordinate System
+## MLC Assumptions (Phase 2 Data)
 
-**Assumption:** All DICOM files use standard IEC 61217 patient coordinate system:
-- X: Patient left (+) to right (-)
-- Y: Patient posterior (+) to anterior (-)
-- Z: Patient inferior (+) to superior (-)
+### MLC Type
+- **120-leaf MLC** typical (60 leaf pairs)
+- Varian Millennium or TrueBeam style
+- Central 40 pairs: 5mm width
+- Outer 20 pairs: 10mm width (if applicable)
 
-**SimpleITK Handling:** Origin and spacing preserved through resampling.
+### Control Points
+- Typically **178 control points** per arc
+- 2° gantry spacing
+- First and last control points may have zero MU
 
-**Validation:** Visual inspection in `verify_npz.ipynb` confirms anatomy orientation.
-
----
-
-## Data Filtering
-
-### Required Structures
-
-Cases are processed only if:
-```python
-ptv70_sum > 0 and ptv56_sum > 0  # Unless --relax_filter
-```
-
-**Rationale:** Ensure consistent training data for SIB cases.
-
-**Override:** Use `--relax_filter` flag for PTV70-only cases.
-
-### Prescription Filter (External)
-
-Cases should be pre-filtered to:
-- 28 fractions
-- 70 Gy to PTV70 (2.5 Gy/fx)
-- 56 Gy to PTV56 if present (2.0 Gy/fx)
-- 50.4 Gy to PTV50.4 if present (1.8 Gy/fx)
-
-This filtering is done externally before preprocessing.
+### Data Format
+- LeafJawPositions in mm from isocenter
+- Bank A (negative X): First 60 values
+- Bank B (positive X): Last 60 values
+- Negative values = leaves on patient left side
 
 ---
 
-## Known Issues
+## Validation Checks
 
-### Issue #1: SIB Dose Interpretation
+The preprocessing script checks these assumptions and warns if violated:
 
-**Problem:** Model may interpret PTV56 dose of 0.8 as "80% of target" rather than "correct 56 Gy prescription."
+### Critical (will fail)
+- Missing required structures (PTV70, Prostate, Rectum, Bladder)
+- Empty dose grid
+- CT/Dose size mismatch after resampling
 
-**Status:** Documented; requires prescription encoding in Phase 2.
+### Warning (will proceed with caution)
+- Prescription not found in DICOM (uses fallback)
+- Structure extends beyond FOV (>10% truncation)
+- SDF validation fails
+- Registration check fails (dose-structure misalignment suspected)
 
-**Workaround:** Include prescription targets in constraints vector.
-
-### Issue #2: No Registration Validation
-
-**Problem:** No automated check that dose grid aligns with CT/contours.
-
-**Status:** Added to `verify_npz.ipynb` validation checks.
-
-**Check:** Mean dose inside PTV should be higher than outside.
-
-### Issue #3: Variable Contour Names
-
-**Problem:** Institutions use different naming conventions.
-
-**Status:** Handled via `oar_mapping.json` with extensive variations.
-
-**Maintenance:** Add new variations as encountered.
+### Informational (logged only)
+- Optional structures missing (Femurs, Bowel)
+- Original HU range outside expected [-1000, 3000]
+- Dose hot spots >110% of prescription
 
 ---
 
-## Recommendations Before HPC Scaling
+## Output Guarantees
 
-### Must Do
-- [ ] Run `verify_npz.ipynb` batch validation on all cases
-- [ ] Manual review of any failed cases
-- [ ] Confirm no critical registration failures
-- [ ] Document any excluded cases with reasons
+If preprocessing completes successfully, the output guarantees:
 
-### Should Do
-- [ ] Add prescription metadata to npz files
-- [ ] Implement boundary truncation warnings in preprocessing
-- [ ] Create case manifest with SIB type classification
-
-### Nice to Have
-- [ ] Extract beam geometry (prep for Phase 2)
-- [ ] Add signed distance fields for masks
-- [ ] Implement pymedphys DVH validation
-
----
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-01 | Initial documentation |
+| Property | Guarantee |
+|----------|-----------|
+| CT shape | (512, 512, 256) |
+| CT range | [0, 1] |
+| Dose shape | (512, 512, 256) |
+| Dose range | [0, max] where max ~1.0-1.1 |
+| Masks shape | (8, 512, 512, 256) |
+| Masks values | {0, 1} uint8 |
+| SDF shape | (8, 512, 512, 256) |
+| SDF range | [-1, 1] float32 |
+| Constraints shape | (13,) |
+| Spacing | (1.0, 1.0, 2.0) mm |
+| Centering | Prostate centroid at grid center |
 
 ---
 
-## References
+## Known Limitations
 
-- AAPM TG-101: Stereotactic Body Radiation Therapy
-- QUANTEC: Quantitative Analysis of Normal Tissue Effects in the Clinic
-- DICOM RT Standard: PS3.3 Information Object Definitions
-- SimpleITK Documentation: https://simpleitk.readthedocs.io/
+### Not Supported
+- Post-prostatectomy cases (no prostate structure)
+- Brachytherapy boost cases
+- Stereotactic treatments (SBRT)
+- Non-prostate disease sites
+- Multiple isocenters
+- Electron or proton treatments
+
+### Limited Support
+- 3-level SIB (PTV50.4 extraction basic)
+- Non-standard MLC configurations
+- FFF (flattening-filter-free) beams
+- Very large patients (>50cm AP diameter)
+
+### Planned Improvements
+- PTV50.4 full support for 3-level SIB
+- Automatic structure name mapping via ML
+- Support for post-prostatectomy cases
+- Multi-institution structure naming conventions

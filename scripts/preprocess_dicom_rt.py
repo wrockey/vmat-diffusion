@@ -1,4 +1,12 @@
 """
+DEPRECATED: Use preprocess_dicom_rt_v2.2.py instead.
+
+This script is kept for reference only. The v2.2 version includes:
+- Signed Distance Fields (SDFs) for neural network training
+- Full MLC extraction for Phase 2
+- Compressed .npz output (~50% smaller)
+- Enhanced validation and beam geometry extraction
+
 Preprocess DICOM-RT VMAT plans to .npz for diffusion model training.
 
 Functionality: Resamples/aligns CT, masks, dose to fixed grid (512x512x256 @ 1x1x2mm),
@@ -8,8 +16,14 @@ Version: 2.0 - Adds prescription extraction, SIB support, validation checks
 
 Assumptions: See docs/preprocessing_assumptions.md
 
-Usage: python preprocess_dicom_rt.py [flags]
+Usage: python preprocess_dicom_rt_v2.2.py [flags]
 """
+import warnings
+warnings.warn(
+    "preprocess_dicom_rt.py is deprecated. Use preprocess_dicom_rt_v2.2.py instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import os
 import json
