@@ -521,12 +521,15 @@ def compute_sdf(binary_mask, spacing_mm=(1.0, 1.0, 2.0), clip_mm=DEFAULT_SDF_CLI
     if binary_mask.sum() == 0:
         # Empty mask - return all positive (outside) at max distance
         return np.full(binary_mask.shape, 1.0, dtype=np.float32)
-    
+
+    # Cast to bool to ensure ~ is logical NOT, not bitwise NOT (uint8 bug)
+    mask_bool = binary_mask.astype(bool)
+
     # Distance transform for outside (where mask is 0)
-    dist_outside = distance_transform_edt(~binary_mask, sampling=spacing_mm)
-    
+    dist_outside = distance_transform_edt(~mask_bool, sampling=spacing_mm)
+
     # Distance transform for inside (where mask is 1)
-    dist_inside = distance_transform_edt(binary_mask, sampling=spacing_mm)
+    dist_inside = distance_transform_edt(mask_bool, sampling=spacing_mm)
     
     # SDF: negative inside, positive outside
     sdf = dist_outside - dist_inside
