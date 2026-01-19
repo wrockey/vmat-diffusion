@@ -77,7 +77,22 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 
 ### In Progress 🔄
 
-*Nothing currently in progress*
+**2026-01-19: DDPM Training (RUNNING)**
+- Training running on local SSD data (`~/vmat-diffusion-project/data/processed_npz/`)
+- Fixed I/O bottleneck by copying data from slow WSL2 Windows mount
+- Git commit for experiment: `cd7dac8`
+- Test cases held out: case_0007, case_0021 (same as baseline)
+- Training command:
+  ```bash
+  python scripts/train_dose_ddpm_v2.py \
+      --data_dir ~/vmat-diffusion-project/data/processed_npz \
+      --epochs 200 --batch_size 2 --exp_name ddpm_dose_v1 --seed 42
+  ```
+- Monitor progress:
+  ```bash
+  tail -50 ~/vmat-diffusion-project/runs/ddpm_dose_v1/training.log
+  cat ~/vmat-diffusion-project/runs/ddpm_dose_v1/version_1/metrics.csv
+  ```
 
 ### Next Steps 📋
 
