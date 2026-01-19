@@ -8,7 +8,8 @@ This document tracks all experiments conducted in this project for reproducibili
 
 | Date | Experiment ID | Notebook | Model | Best Metric | Status |
 |------|---------------|----------|-------|-------------|--------|
-| 2026-01-19 | baseline_unet_run1 | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE | Complete |
+| 2026-01-19 | baseline_unet_run1 | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
+| 2026-01-19 | baseline_unet_test_eval | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
 
 ---
 
@@ -95,4 +96,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-19*
+*Last updated: 2026-01-19 (Added test evaluation)*
