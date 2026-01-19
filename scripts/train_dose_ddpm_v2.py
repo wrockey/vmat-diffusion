@@ -1434,7 +1434,7 @@ def main():
         log_every_n_steps=10,
         gradient_clip_val=1.0,  # Gradient clipping for stability
         accumulate_grad_batches=4 if args.batch_size == 1 else 1,  # Effective batch size
-        deterministic=True,
+        deterministic="warn",  # True incompatible with trilinear upsample backward
     )
     
     # Train
