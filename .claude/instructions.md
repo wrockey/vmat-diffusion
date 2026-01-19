@@ -25,6 +25,19 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 - PTV56: 56 Gy in 28 fractions
 - OARs: Rectum, Bladder, Femurs, Bowel
 
+### Dataset Scale
+| Phase | Cases | Status |
+|-------|-------|--------|
+| Current | 24 (23 usable) | Available |
+| Near-term | 100-150 | Expected soon |
+| Final target | 750-1000 | Ultimate goal |
+
+**Implications:**
+- Current results are preliminary (small test set = limited statistical power)
+- Model architecture and pipeline should scale to larger datasets
+- Will need to re-evaluate with larger test sets for publication
+- Consider k-fold cross-validation when dataset grows
+
 ---
 
 ## Progress Log
@@ -193,15 +206,124 @@ Scripts auto-detect paths (check local first, then external drive).
 ## Environment
 
 ```bash
-# Activate environment
+# Recreate environment from scratch
+conda env create -f environment.yml
 conda activate vmat-diffusion
 
-# Key packages
-Python: 3.12.12
-PyTorch: 2.4.1
-CUDA: 12.4
-GPU: NVIDIA GeForce RTX 3090 (24 GB)
+# Or install with pip (after creating conda env with Python 3.12)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
 ```
+
+**Current environment:**
+- Python: 3.12.12
+- PyTorch: 2.4.1
+- CUDA: 12.4
+- GPU: NVIDIA GeForce RTX 3090 (24 GB)
+
+**Key files:**
+- `environment.yml` - Full conda environment export
+- `requirements.txt` - Minimal pip dependencies
+
+---
+
+## Hardware Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| GPU | 12 GB VRAM | 24 GB VRAM (RTX 3090) |
+| RAM | 32 GB | 64 GB |
+| Storage | 50 GB | 200 GB (for full dataset) |
+| CUDA | 12.0+ | 12.4 |
+
+**Notes:**
+- Baseline U-Net: ~8 GB VRAM during training
+- DDPM: ~16-20 GB VRAM during training
+- Gamma computation is CPU/RAM intensive (~3 GB per case)
+
+---
+
+## Structure Naming Conventions
+
+The preprocessing expects these DICOM structure names (case-insensitive, partial match):
+
+| Structure | Expected Names | Required |
+|-----------|---------------|----------|
+| PTV70 | `PTV70`, `PTV_70`, `PTV 70Gy` | Yes (SIB) |
+| PTV56 | `PTV56`, `PTV_56`, `PTV 56Gy` | Yes (SIB) |
+| Prostate | `Prostate`, `CTV_Prostate` | Yes |
+| Rectum | `Rectum`, `Rect` | Yes |
+| Bladder | `Bladder`, `Blad` | Yes |
+| Femur_L | `Femur_L`, `FemoralHead_L`, `Left Femur` | Yes |
+| Femur_R | `Femur_R`, `FemoralHead_R`, `Right Femur` | Yes |
+| Bowel | `Bowel`, `BowelBag`, `SmallBowel` | Optional |
+
+**Cases skipped if:** Missing PTV70 or PTV56 (non-SIB protocol)
+
+See `oar_mapping.json` for the full mapping configuration.
+
+---
+
+## Adding New DICOM-RT Data
+
+When you receive new cases (100+, 750+):
+
+1. **Place anonymized DICOM in** `/mnt/i/anonymized_dicom/case_XXXX/`
+   - Ensure PHI is removed
+   - Each case needs: CT, RTStruct, RTDose, RTPlan
+
+2. **Run preprocessing**:
+   ```bash
+   python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
+   ```
+   - Skipped cases are logged (check for missing structures)
+   - ~2-3 minutes per case
+
+3. **Validate the batch**:
+   ```bash
+   # Quick check
+   ls /mnt/i/processed_npz/*.npz | wc -l
+
+   # Full validation (run verify_npz.ipynb or):
+   python -c "import numpy as np; from pathlib import Path; [print(f'{p.name}: {np.load(p)[\"dose\"].shape}') for p in Path('/mnt/i/processed_npz').glob('*.npz')]"
+   ```
+
+4. **Update train/val/test splits** if needed (currently in training scripts)
+
+---
+
+## Known Issues & Troubleshooting
+
+### Preprocessing Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Case skipped | Missing PTV56/PTV70 | Non-SIB case, expected |
+| SDF all positive | Old bug (fixed) | Use `preprocess_dicom_rt_v2.2.py` |
+| Structure not found | Naming mismatch | Update `oar_mapping.json` |
+
+### Training Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `deterministic=True` error | Trilinear upsample | Use `deterministic="warn"` |
+| OOM during training | Batch/patch too large | Reduce `batch_size` or `patch_size` |
+| Loss goes NaN | Learning rate too high | Reduce `lr` by 10x |
+
+### Inference Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Gamma computation fails | Missing numba | `pip install numba` |
+| pymedphys import error | Old version | `pip install pymedphys>=0.40` |
+| OOM during gamma | Full resolution | Use `--gamma_subsample 4` |
+
+### Data Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| case_0013 skipped | Non-SIB protocol | Expected, not an error |
+| Dose range varies | Different Rx doses | Normalized in preprocessing |
 
 ---
 
@@ -236,4 +358,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-19 (Added pre-experiment git commit requirement)*
+*Last updated: 2026-01-19 (Added hardware reqs, structure naming, troubleshooting, data workflow)*
