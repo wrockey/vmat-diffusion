@@ -863,7 +863,7 @@ def main():
         callbacks=callbacks,
         logger=loggers,
         log_every_n_steps=10,
-        deterministic=True,
+        deterministic="warn",  # True incompatible with trilinear upsample backward
         gradient_clip_val=1.0,
     )
     
