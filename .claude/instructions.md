@@ -86,6 +86,10 @@ WSL2 had persistent issues:
 
 **Current approach:** Retry on native Windows with **safe training mode** (reduced GPU load).
 
+**Status (2026-01-19 21:20):** Training running successfully on native Windows. Epoch 0 in progress, GPU temp stable at 44°C.
+
+**Known issue:** Gamma validation skipped due to missing numba - fix with `pip install pymedphys[tests]` after training completes.
+
 **Windows Project Location:** `C:\Users\Bill\vmat-diffusion-project`
 
 **To start safe training (from Windows cmd):**
@@ -465,6 +469,7 @@ pkill -f training_watchdog.sh
 | Gamma computation fails | Missing numba | `pip install numba` |
 | pymedphys import error | Old version | `pip install pymedphys>=0.40` |
 | OOM during gamma | Full resolution | Use `--gamma_subsample 4` |
+| "PyMedPhys unable to import numba.njit" | numba not installed in vmat-win env | `pip install pymedphys[tests]` (includes numba) |
 
 ### Data Issues
 
