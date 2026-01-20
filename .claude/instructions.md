@@ -108,15 +108,18 @@ None currently.
 
 ### Next Steps 📋
 
-1. **Analyze DDPM failure modes** - Why is MAE so volatile despite low loss?
-2. **Try more sampling steps** - Current may be too few for stable predictions
-3. **Experiment with loss functions** - Add dose-specific loss terms
-4. **Create comparison notebook** - Baseline vs DDPM visualization
-5. **Install numba** - `pip install pymedphys[tests]` for gamma metrics
-6. **Consider alternative approaches:**
-   - Direct regression with improved architecture
-   - Conditional flow matching instead of DDPM
-   - Ensemble methods
+**See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed systematic plan.**
+
+Summary of phases:
+1. **Phase 1: Quick Wins** (no retraining) - sampling steps ablation, ensemble averaging
+2. **Phase 2: Schedule/Loss** - try different schedules, add dose-aware loss terms
+3. **Phase 3: Architecture** - conditioning ablation, capacity scaling
+4. **Phase 4: Alternatives** - if DDPM still underperforms, try flow matching or improved baseline
+
+**Immediate next action:** Run Phase 1 experiments using existing checkpoint (inference only, ~1 hour)
+
+Also needed:
+- Install numba: `pip install pymedphys[tests]` for gamma metrics
 
 ### Future Work 📝
 
@@ -131,9 +134,10 @@ None currently.
 ## Key Documentation (READ THESE FIRST)
 
 Before starting work, review:
-1. `docs/SCIENTIFIC_BEST_PRACTICES.md` - Reproducibility and publication guidelines
-2. `notebooks/EXPERIMENTS_INDEX.md` - Experiment tracking and naming conventions
-3. `notebooks/TEMPLATE_experiment.ipynb` - Template for new experiments
+1. `docs/DDPM_OPTIMIZATION_PLAN.md` - **Current focus:** systematic plan to improve DDPM
+2. `docs/SCIENTIFIC_BEST_PRACTICES.md` - Reproducibility and publication guidelines
+3. `notebooks/EXPERIMENTS_INDEX.md` - Experiment tracking and naming conventions
+4. `notebooks/TEMPLATE_experiment.ipynb` - Template for new experiments
 
 ---
 
