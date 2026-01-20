@@ -32,11 +32,18 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 | Near-term | 100-150 | Expected soon |
 | Final target | 750-1000 | Ultimate goal |
 
-**Implications:**
-- Current results are preliminary (small test set = limited statistical power)
-- Model architecture and pipeline should scale to larger datasets
-- Will need to re-evaluate with larger test sets for publication
-- Consider k-fold cross-validation when dataset grows
+**What 24 cases CAN tell us:**
+- **Relative model comparison** - Both models trained on identical data/splits, so comparing baseline vs DDPM is valid
+- **Fundamental architectural issues** - Extreme volatility (MAE 12-64 Gy) isn't just small-sample noise; it indicates real problems
+- **Workflow validation** - Training completes, checkpoints save, metrics log correctly
+- **Loss vs metric disconnect** - If diffusion loss decreases but dose quality doesn't improve, more data won't fix that
+
+**What 24 cases CAN'T tell us:**
+- **Absolute performance** - Both models will likely improve with more data
+- **Publication-quality claims** - Need larger test set (n≥50) for statistical significance
+- **Whether DDPM could eventually win** - Diffusion models are more data-hungry than direct regression
+
+**Recommendation:** Investigate issues now with lightweight experiments, but document as "preliminary" and re-evaluate when 100+ cases arrive. Don't spend weeks tuning hyperparameters on 24 cases.
 
 ---
 
@@ -87,6 +94,8 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 - val_mae was extremely volatile (12-64 Gy range) ✗
 - Diffusion model learns denoising well but produces unstable dose predictions
 - Likely cause: sampling process introduces variability not captured by noise prediction loss
+
+**Note on dataset size:** Results are preliminary (24 cases). However, the baseline vs DDPM comparison is valid since both used identical data. The extreme MAE volatility indicates a fundamental issue worth investigating now, not just small-sample noise. Re-evaluate with 100+ cases. See "Dataset Scale" section for details.
 
 **Archived runs:**
 - `runs/vmat_dose_ddpm/` - Completed DDPM v1 (this run)
