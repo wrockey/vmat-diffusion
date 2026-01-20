@@ -15,6 +15,7 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-20 | ddpm_dose_v1 | `3efbea0` | **⚠️ NEEDS CREATION** | SimpleUNet3D+DDPM | 12.19 Gy MAE (val) | Complete (underperformed) |
 | 2026-01-20 | phase1_sampling | TBD | - | DDPM inference | **3.80 Gy MAE** (50 steps) | Complete |
 | 2026-01-20 | phase1_ensemble | TBD | - | DDPM inference | **3.78 Gy MAE** (n=1) | Complete |
+| 2026-01-20 | strategic_assessment | `206f84c` | [2026-01-20_strategic_assessment.ipynb](2026-01-20_strategic_assessment.ipynb) | Analysis | - | Complete |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
@@ -52,6 +53,7 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 ### Notebooks Needing Creation
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 - [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
+- [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
 
 ---
 
