@@ -4,19 +4,31 @@
 
 ---
 
-## ⚠️ PRIMARY PROJECT LOCATION
+## 🚨 CRITICAL: PLATFORM & PROJECT LOCATION
 
-**All work should be done in:** `C:\Users\Bill\vmat-diffusion-project`
+### ⚠️ USE NATIVE WINDOWS - NOT WSL ⚠️
 
-| Item | Path |
-|------|------|
-| Project | `C:\Users\Bill\vmat-diffusion-project` |
-| Data | `I:\processed_npz` |
-| Conda env | `vmat-win` (activate via Pinokio miniconda) |
+| Setting | Value |
+|---------|-------|
+| **Platform** | **Native Windows** (NOT WSL, NOT WSL2) |
+| **Project Directory** | `C:\Users\Bill\vmat-diffusion-project` |
+| **Data Directory** | `I:\processed_npz` |
+| **Conda Environment** | `vmat-win` (via Pinokio miniconda) |
+| **Shell** | `cmd.exe` or PowerShell (NOT bash) |
 
-**DEPRECATED:** `~/wrockey/vmat-diffusion-project` (WSL) - do not use
+### How to Activate Environment (Windows cmd.exe)
+```cmd
+call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
+cd C:\Users\Bill\vmat-diffusion-project
+```
 
-All logging, results, notebooks, and git commits should be in the Windows directory.
+### ❌ DO NOT USE
+- **WSL/WSL2** - Deprecated due to GPU stability issues, hangs, and TDR crashes
+- **`/mnt/c/...` paths** - These are WSL paths; use Windows paths (`C:\...`)
+- **`~/wrockey/vmat-diffusion-project`** - Old WSL location, do not use
+- **bash shell** - Use Windows cmd.exe or PowerShell
+
+All scripts, training, inference, logging, results, notebooks, and git operations should be done in the **native Windows environment**.
 
 ---
 
