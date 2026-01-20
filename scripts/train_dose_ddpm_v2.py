@@ -276,11 +276,40 @@ class PublicationLoggingCallback(Callback):
 
 class GPUMemoryCallback(Callback):
     """Log GPU memory usage."""
-    
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx == 0 and torch.cuda.is_available():
             memory_gb = torch.cuda.max_memory_allocated() / 1e9
             pl_module.log('misc/gpu_memory_gb', memory_gb)
+
+
+class GPUCoolingCallback(Callback):
+    """
+    Add small pauses between batches to help prevent GPU overheating.
+
+    This is useful for sustained training on consumer GPUs (like RTX 3090)
+    that may throttle or crash under continuous maximum load.
+    """
+
+    def __init__(self, pause_every_n_batches: int = 10, pause_seconds: float = 0.5):
+        super().__init__()
+        self.pause_every_n_batches = pause_every_n_batches
+        self.pause_seconds = pause_seconds
+        self.total_pauses = 0
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if (batch_idx + 1) % self.pause_every_n_batches == 0:
+            # Sync GPU to ensure all operations complete
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            time.sleep(self.pause_seconds)
+            self.total_pauses += 1
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Longer pause between epochs
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        time.sleep(2.0)  # 2 second pause between epochs
 
 
 # =============================================================================
@@ -1256,6 +1285,14 @@ def main():
                        help='Number of GPUs to use')
     parser.add_argument('--strategy', type=str, default='auto',
                        help='Distributed strategy (auto, ddp, etc.)')
+
+    # GPU stability options
+    parser.add_argument('--gpu_cooling', action='store_true', default=False,
+                       help='Enable GPU cooling pauses to prevent overheating')
+    parser.add_argument('--cooling_interval', type=int, default=10,
+                       help='Pause every N batches (if --gpu_cooling enabled)')
+    parser.add_argument('--cooling_pause', type=float, default=0.5,
+                       help='Pause duration in seconds (if --gpu_cooling enabled)')
     
     args = parser.parse_args()
 
@@ -1410,6 +1447,14 @@ def main():
         ),
         GPUMemoryCallback(),
     ]
+
+    # Add GPU cooling callback if requested
+    if args.gpu_cooling:
+        print(f"GPU cooling enabled: pause {args.cooling_pause}s every {args.cooling_interval} batches")
+        callbacks.append(GPUCoolingCallback(
+            pause_every_n_batches=args.cooling_interval,
+            pause_seconds=args.cooling_pause,
+        ))
     
     # Loggers - both TensorBoard and CSV for easy access
     loggers = [

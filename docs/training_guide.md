@@ -268,11 +268,19 @@ Headroom on 24GB: ~14-16 GB available for safety.
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--seed` | 42 | Random seed for reproducibility |
-| `--num_workers` | 2 | DataLoader workers (keep low on WSL2) |
+| `--num_workers` | 2 | DataLoader workers (keep low on WSL2, use 0 on native Windows) |
 | `--resume` | None | Checkpoint path to resume from |
 | `--rx_dose_gy` | 70.0 | Prescription dose (Gy) |
 | `--devices` | 1 | Number of GPUs |
 | `--strategy` | auto | Distributed strategy (ddp for multi-GPU) |
+
+### GPU Stability
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--gpu_cooling` | False | Enable pauses between batches to prevent overheating |
+| `--cooling_interval` | 10 | Pause every N batches (if --gpu_cooling enabled) |
+| `--cooling_pause` | 0.5 | Pause duration in seconds (if --gpu_cooling enabled) |
 
 ---
 
@@ -495,6 +503,8 @@ Epoch   train/loss   val/mae_gy   Status
 | Training very slow | I/O bottleneck | Use local SSD (not `/mnt/`), keep num_workers=2 on WSL |
 | Training hangs/stalls | Dataloader deadlock (WSL) | Use num_workers=2, disable persistent_workers |
 | WSL crashes / GPU errors | Memory pressure | Don't cache data in RAM; restart WSL |
+| System crash (0x113 / TDR) | GPU overheating or driver timeout | Use native Windows, enable --gpu_cooling |
+| Windows becomes unresponsive | GPU at 100% sustained | Enable --gpu_cooling, reduce batch_size |
 
 ---
 
@@ -529,6 +539,55 @@ Same seed → same train/val split → same initialization → same results (wit
 | All hyperparameters | training_config.json | hyperparameters |
 | Training time | training_summary.json | total_training_time_hours |
 | Best results | training_summary.json | best_val_mae_gy, best_epoch |
+
+---
+
+## Native Windows / Pinokio Setup
+
+If you experience stability issues with WSL2 (hangs, crashes, dxgkrnl errors), running natively on Windows can be more stable.
+
+### Setup
+
+1. Install Miniconda in Pinokio: `C:\pinokio\bin\miniconda`
+2. Create the environment:
+   ```cmd
+   conda create -n vmat-win python=3.10
+   conda activate vmat-win
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   pip install pytorch-lightning numpy scipy tensorboard rich pymedphys
+   ```
+
+3. Copy project files to Windows:
+   ```cmd
+   mkdir C:\Users\<username>\vmat-diffusion-project
+   copy scripts\train_dose_ddpm_v2.py C:\Users\<username>\vmat-diffusion-project\scripts\
+   ```
+
+### Safe Training Mode
+
+For systems experiencing GPU overheating or driver crashes, use the safe training configuration:
+
+```cmd
+:: Run from C:\Users\<username>\vmat-diffusion-project
+start_training_safe.bat
+```
+
+This batch file uses reduced settings:
+- **Batch size: 1** (reduced from 2)
+- **Base channels: 32** (reduced from 48, ~50% fewer parameters)
+- **Workers: 0** (avoids Windows multiprocessing issues)
+- **GPU cooling enabled** (0.5s pause every 10 batches + 2s between epochs)
+
+### Monitor GPU Temperature
+
+Use GPU-Z or HWiNFO64 to monitor:
+- **Target temp:** < 80°C during training
+- **Danger zone:** > 85°C (may trigger thermal throttling or crashes)
+
+If temps are too high:
+1. Increase cooling_pause (e.g., 1.0s instead of 0.5s)
+2. Reduce cooling_interval (e.g., 5 batches instead of 10)
+3. Check GPU fan curve / case airflow
 
 ---
 
