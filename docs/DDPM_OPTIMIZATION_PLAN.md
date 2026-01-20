@@ -17,12 +17,80 @@
 **Key Findings:**
 1. Counter-intuitive: More steps = worse results (likely noise schedule issue)
 2. Ensemble averaging provides no benefit (very low sample variability)
-3. DDPM is viable for dose prediction with proper inference settings
+3. DDPM matches but does NOT beat baseline
 
-**Recommended Next Steps:**
-1. Update inference code to use 50 steps as default
-2. Re-run test set evaluation with optimal parameters
-3. Investigate why more steps degrades quality (potential future work)
+---
+
+## Strategic Conclusions & Recommendations
+
+### Critical Assessment: Is DDPM the Right Approach?
+
+**Short answer: Probably not.** Phase 1 results reveal fundamental concerns:
+
+#### Red Flags
+
+| Observation | What It Suggests |
+|-------------|------------------|
+| "More steps = worse" | Structural issue, not tuning problem. Model denoises away the dose signal. |
+| Near-zero sample variability (std ~0.02) | Model is deterministic, not generative. Not leveraging diffusion's strengths. |
+| DDPM = Baseline (3.78 vs 3.73 Gy) | Added complexity provides no accuracy benefit. |
+| 50 steps optimal (of 1000 trained) | Essentially doing near-one-shot prediction, not iterative refinement. |
+
+#### Fundamental Mismatch
+
+- **Dose prediction is deterministic:** One correct answer per patient anatomy + prescription
+- **Diffusion models excel at multi-modal generation:** Many valid outputs (faces, images, etc.)
+- **We're forcing a generative framework onto a regression problem**
+
+#### Will More Data (n=100+) Help?
+
+**Unlikely to change the DDPM vs baseline comparison:**
+
+| n | Expected Baseline | Expected DDPM | Relative Performance |
+|---|-------------------|---------------|----------------------|
+| 24 (current) | 3.73 Gy | 3.78 Gy | ~Tie |
+| 100 | ~2.5-3.0 Gy | ~2.5-3.0 Gy | ~Tie (predicted) |
+| 750+ | <2 Gy | <2 Gy | ~Tie (predicted) |
+
+Both models will improve with more data, but:
+- The "more steps = worse" problem is structural, not data-related
+- The task mismatch (deterministic vs generative) won't change
+- Diffusion models are data-hungry, but baseline already works with limited data
+
+### Recommended Path Forward
+
+#### Option A: Improve Baseline (Recommended)
+Lowest risk, most practical:
+1. **Perceptual loss** - Match features for sharper gradients
+2. **Adversarial loss** - GAN discriminator for realistic distributions
+3. **Structure-weighted loss** - Penalize PTV/OAR errors more
+4. **DVH loss** - Directly optimize clinical metrics
+5. **Attention mechanisms** - Self-attention at U-Net bottleneck
+
+#### Option B: Flow Matching
+If generative approach still desired:
+- Simpler than diffusion, single forward pass possible
+- Direct path from noise → target
+- Often better for regression-style tasks
+- See Phase 4.2 in experiment plan
+
+#### Option C: Architecture Upgrades
+- **nnU-Net** - Medical imaging gold standard, auto-configures
+- **Swin-UNETR** - Transformer-based, state-of-art for 3D medical
+
+### What NOT to Do
+
+1. ❌ Don't continue tuning DDPM hyperparameters (diminishing returns)
+2. ❌ Don't wait for n=100 cases hoping DDPM improves relative to baseline
+3. ❌ Don't proceed to Phase 2/3 of DDPM optimization (structural issues won't be fixed)
+
+### Immediate Next Steps
+
+1. **Update inference code** to use 50 DDIM steps as default
+2. **Run test set evaluation** with optimal DDPM parameters for completeness
+3. **Pivot to baseline improvements** (perceptual/adversarial loss)
+4. **Consider Flow Matching** as alternative generative approach
+5. **Collect 100 cases** - will help any approach, just don't expect DDPM to pull ahead
 
 ---
 
@@ -230,4 +298,4 @@ Each directory should contain:
 
 ---
 
-*Last updated: 2026-01-20 (Phase 1 experiments complete - DDPM matches baseline with optimized inference)*
+*Last updated: 2026-01-20 (Added strategic conclusions - DDPM not recommended, pivot to baseline improvements)*

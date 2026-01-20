@@ -125,9 +125,27 @@ Frame VMAT planning as a generative task analogous to AI image generation:
   - Exp 1.1 (Sampling Steps): 50 steps optimal → **3.80 Gy MAE**
   - Exp 1.2 (Ensemble): n=1 optimal → **3.78 Gy MAE**
 - **Key Finding:** DDPM now matches baseline (3.78 Gy vs 3.73 Gy)
-- **Counter-intuitive:** More steps = worse results (likely noise schedule issue or drift accumulation)
+- **Counter-intuitive:** More steps = worse results (structural issue, not tuning problem)
 - **Ensemble averaging provides no benefit** (very low sample variability ~0.02)
 - Results saved to: `experiments/phase1_sampling/` and `experiments/phase1_ensemble/`
+
+**2026-01-20: Strategic Assessment - DDPM NOT RECOMMENDED ⚠️**
+
+After Phase 1 analysis, **DDPM is not the right approach for dose prediction:**
+
+| Red Flag | Implication |
+|----------|-------------|
+| More steps = worse | Model denoises away dose signal (structural issue) |
+| Near-zero sample variability | Model is deterministic, not generative |
+| DDPM = Baseline (3.78 vs 3.73 Gy) | Added complexity provides no accuracy benefit |
+| 50/1000 steps optimal | Essentially one-shot prediction, not iterative refinement |
+
+**Fundamental Mismatch:**
+- Dose prediction is **deterministic** (one correct answer per patient)
+- Diffusion models excel at **multi-modal generation** (many valid outputs)
+- More data (n=100+) unlikely to change DDPM vs baseline comparison
+
+**Recommendation:** Pivot to baseline improvements or Flow Matching.
 
 ### In Progress 🔄
 
@@ -135,22 +153,33 @@ None currently.
 
 ### Next Steps 📋
 
-**Phase 1 Complete - No Phase 2 needed (MAE < 6 Gy threshold).**
+**DDPM optimization complete. Pivot to alternative approaches.**
 
-Recommended actions:
-1. **Update inference code** to use 50 DDIM steps as default
-2. **Re-run test set evaluation** with optimal parameters
-3. **Document findings** in experiment notebook
-4. Investigate why more steps degrades quality (future work)
+**Recommended Path Forward:**
+1. ✅ **Improve baseline** with perceptual/adversarial loss (highest priority)
+2. ✅ **Try Flow Matching** if generative approach desired
+3. ✅ **Collect 100 cases** - helps any approach
+4. ❌ **Don't continue DDPM tuning** - structural issues won't be fixed
+
+**Immediate actions:**
+1. Update inference code to use 50 DDIM steps as default
+2. Run test set evaluation with optimal DDPM parameters (for completeness)
+3. Implement perceptual loss for baseline U-Net
+4. Research Flow Matching implementation
 
 **Environment note:** numba/pymedphys[tests] is now installed - gamma metrics should work.
 
 ### Future Work 📝
 
-- Ablation studies (no SDF, no constraints)
-- Hyperparameter tuning
-- Larger dataset (process case_0013, acquire more data)
-- MLC sequence prediction (Phase 2)
+**Priority (do first):**
+- Baseline improvements (perceptual/adversarial loss)
+- Flow Matching comparison
+- Collect 100+ cases
+
+**Lower priority:**
+- Ablation studies (no SDF, no constraints) - may still be useful for baseline
+- Architecture upgrades (nnU-Net, Swin-UNETR)
+- MLC sequence prediction (Phase 2 of project)
 - Clinical validation
 
 ---
@@ -675,4 +704,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (Phase 1 optimization complete - DDPM matches baseline with 50 DDIM steps)*
+*Last updated: 2026-01-20 (Strategic assessment - DDPM not recommended, pivot to baseline improvements or Flow Matching)*

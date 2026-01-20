@@ -26,6 +26,29 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 
 **Conclusion:** DDPM now matches baseline (3.78 vs 3.73 Gy) with optimal inference settings.
 
+### Strategic Assessment (Post-Phase 1)
+
+**Key Finding: DDPM is NOT recommended for this task.**
+
+| Red Flag | Implication |
+|----------|-------------|
+| More steps = worse results | Structural issue; model denoises away dose signal |
+| Near-zero sample variability | Model is deterministic, not generative |
+| DDPM = Baseline accuracy | Added complexity provides no benefit |
+| 50/1000 steps optimal | Essentially one-shot prediction, not iterative refinement |
+
+**Fundamental Mismatch:**
+- Dose prediction is **deterministic** (one correct answer per patient)
+- Diffusion models excel at **multi-modal generation** (many valid outputs)
+- More data (n=100+) unlikely to change DDPM vs baseline comparison
+
+**Recommended Path Forward:**
+1. ✅ **Improve baseline** with perceptual/adversarial loss (recommended)
+2. ✅ **Try Flow Matching** if generative approach desired
+3. ❌ **Don't continue DDPM tuning** (diminishing returns)
+
+See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
+
 ### Notebooks Needing Creation
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 - [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
@@ -62,17 +85,25 @@ Examples:
 - [ ] ~~baseline_unet_run1~~ (Complete - 2026-01-19)
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
-### 2. Diffusion Models (DDPM)
+### 2. Diffusion Models (DDPM) - **NOT RECOMMENDED**
 - [x] ~~ddpm_dose_v1~~ (Complete - 2026-01-20, git: 3efbea0)
   - Run directory: `runs/vmat_dose_ddpm/`
   - Platform: Native Windows/Pinokio (stable, GPU 44-58°C)
-  - **Results: 12.19 Gy MAE (val)** - underperformed baseline (3.73 Gy)
+  - **Training Results: 12.19 Gy MAE (val)** - appeared to underperform baseline
+  - **Optimized Results: 3.78 Gy MAE (val)** - matches baseline with 50 DDIM steps
   - Training: 37 epochs (early stopped), 1.94 hours
   - Best checkpoint: `checkpoints/best-epoch=015-val/mae_gy=12.19.ckpt`
-  - **Issue: Loss vs MAE disconnect** - val_loss decreased but MAE was volatile (12-64 Gy range)
-  - Analysis: Diffusion sampling produces unstable dose predictions despite good denoising
-- [ ] ddpm_dose_v2 (Planned - address sampling stability)
-- [ ] ddpm_dose_v2_conditioned (Planned)
+  - **Conclusion:** DDPM provides no benefit over baseline; not recommended for this task
+- [x] ~~phase1_optimization~~ (Complete - 2026-01-20)
+  - Sampling steps ablation: 50 steps optimal (3.80 Gy)
+  - Ensemble averaging: n=1 optimal (3.78 Gy)
+  - **Finding:** More steps = worse results (structural issue)
+- [ ] ~~ddpm_dose_v2~~ (Cancelled - DDPM not recommended)
+- [ ] ~~ddpm_dose_v2_conditioned~~ (Cancelled - DDPM not recommended)
+
+### 2b. Alternative Generative Approaches (Recommended)
+- [ ] flow_matching_v1 (Planned - simpler than diffusion, better for regression)
+- [ ] baseline_perceptual_loss (Planned - add perceptual/adversarial loss to baseline)
 
 ### 3. Ablation Studies
 - [ ] ablation_no_sdf (Planned - binary masks only)
@@ -123,4 +154,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (Phase 1 optimization complete - DDPM matches baseline with 50 DDIM steps)*
+*Last updated: 2026-01-20 (Strategic assessment complete - DDPM not recommended, pivot to baseline improvements)*
