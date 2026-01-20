@@ -4,6 +4,22 @@
 
 ---
 
+## ⚠️ PRIMARY PROJECT LOCATION
+
+**All work should be done in:** `C:\Users\Bill\vmat-diffusion-project`
+
+| Item | Path |
+|------|------|
+| Project | `C:\Users\Bill\vmat-diffusion-project` |
+| Data | `I:\processed_npz` |
+| Conda env | `vmat-win` (activate via Pinokio miniconda) |
+
+**DEPRECATED:** `~/wrockey/vmat-diffusion-project` (WSL) - do not use
+
+All logging, results, notebooks, and git commits should be in the Windows directory.
+
+---
+
 ## Project Overview
 
 This project implements a generative AI model using diffusion techniques to create deliverable **Volumetric Modulated Arc Therapy (VMAT)** plans for radiation therapy (specifically prostate cancer).
@@ -228,27 +244,16 @@ Before starting work, review:
 
 ## Data Locations
 
-### Native Windows (Pinokio) - PREFERRED
 | Data | Location |
 |------|----------|
 | Project | `C:\Users\Bill\vmat-diffusion-project` |
-| Processed NPZ | `I:\processed_npz` |
+| Processed NPZ | `I:\processed_npz` (23 cases) |
 | Training runs | `C:\Users\Bill\vmat-diffusion-project\runs` |
+| Notebooks | `C:\Users\Bill\vmat-diffusion-project\notebooks` |
+| Experiments | `C:\Users\Bill\vmat-diffusion-project\experiments` |
+| Raw DICOM | `I:\anonymized_dicom` |
 
-### WSL2 (Legacy - stability issues)
-| Data | Primary Location | Fallback |
-|------|------------------|----------|
-| Raw DICOM | `/mnt/i/anonymized_dicom/` | `./data/raw/` |
-| Processed NPZ | `./data/processed_npz/` (local SSD) | `/mnt/i/processed_npz/` |
-| Training runs | `./runs/` | - |
-| Predictions | `./predictions/` | - |
-
-**IMPORTANT:**
-- **Native Windows is now preferred** due to WSL2 stability issues (hangs, TDR errors)
-- If using WSL2: Always train from local SSD, NOT Windows mounts (`/mnt/`)
-- The symlink `./processed` should point to `./data/processed_npz/` (local)
-
-Scripts auto-detect paths (check local first, then external drive).
+**Note:** WSL2 (`~/wrockey/...`) is deprecated due to stability issues.
 
 ---
 
