@@ -1244,7 +1244,7 @@ def main():
     parser.add_argument('--exp_name', type=str, default='vmat_dose_ddpm')
     
     # Misc
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--resume', type=str, default=None,
                        help='Path to checkpoint to resume from')
@@ -1349,7 +1349,8 @@ def main():
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
-        persistent_workers=True if args.num_workers > 0 else False,
+        persistent_workers=False,  # Disabled for WSL stability
+        prefetch_factor=2 if args.num_workers > 0 else None,  # Limit queue size
     )
     
     val_loader = DataLoader(

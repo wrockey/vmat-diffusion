@@ -268,7 +268,7 @@ Headroom on 24GB: ~14-16 GB available for safety.
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--seed` | 42 | Random seed for reproducibility |
-| `--num_workers` | 4 | DataLoader workers |
+| `--num_workers` | 2 | DataLoader workers (keep low on WSL2) |
 | `--resume` | None | Checkpoint path to resume from |
 | `--rx_dose_gy` | 70.0 | Prescription dose (Gy) |
 | `--devices` | 1 | Number of GPUs |
@@ -492,7 +492,9 @@ Epoch   train/loss   val/mae_gy   Status
 | Loss stuck at high value | Learning rate too low | Increase learning rate |
 | `val/mae_gy` stuck > 5 Gy | Model not learning | Check data loading, increase model capacity |
 | OOM error | Memory exceeded | Reduce batch_size or patch_size |
-| Training very slow | I/O bottleneck | Increase num_workers, use SSD |
+| Training very slow | I/O bottleneck | Use local SSD (not `/mnt/`), keep num_workers=2 on WSL |
+| Training hangs/stalls | Dataloader deadlock (WSL) | Use num_workers=2, disable persistent_workers |
+| WSL crashes / GPU errors | Memory pressure | Don't cache data in RAM; restart WSL |
 
 ---
 
@@ -557,10 +559,13 @@ python train_dose_ddpm_v2.py \
 # Increase batch size (if memory allows)
 python train_dose_ddpm_v2.py --batch_size 4
 
-# Optimize data loading
-python train_dose_ddpm_v2.py --num_workers 8
+# Use local SSD storage (CRITICAL for WSL!)
+# Copy data from /mnt/ to local WSL filesystem:
+cp -r /mnt/i/processed_npz ./data/processed_npz
+ln -sf ./data/processed_npz ./processed
 
-# Use faster storage (NVMe SSD)
+# NOTE: On WSL2, keep num_workers=2 (default) to avoid deadlocks
+# Do NOT use num_workers=8 on WSL - it causes training to hang
 ```
 
 ### Resume After Crash

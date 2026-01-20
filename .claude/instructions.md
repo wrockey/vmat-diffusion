@@ -77,28 +77,31 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 
 ### In Progress 🔄
 
-**2026-01-19: DDPM Training (NEEDS RESTART)**
-- Added RAM caching to eliminate I/O bottleneck (commit `bdc6939`)
-- Had WSL2 GPU driver errors (`dxg` ioctl failures) causing stalls
-- **TO RESTART (after WSL shutdown):**
+**2026-01-19: DDPM Training (Running)**
+- Training DDPM model on RTX 3090
+- **Data location:** `./data/processed_npz/` (local SSD copy - NOT Windows mount!)
+- Test cases held out: case_0007, case_0021 (same as baseline)
+- **To monitor:**
   ```bash
-  # 1. From Windows PowerShell: wsl --shutdown
-  # 2. Reopen WSL terminal, then:
+  # Check metrics
+  cat runs/vmat_dose_ddpm/version_*/metrics.csv | tail -20
+  # Check GPU
+  nvidia-smi
+  # Check watchdog (if running)
+  tail -20 runs/watchdog.log
+  ```
+- **To restart if needed:**
+  ```bash
   cd ~/vmat-diffusion-project
   source ~/miniconda3/etc/profile.d/conda.sh && conda activate vmat-diffusion
-  rm -rf runs/ddpm_dose_v1/*
-  nohup python scripts/train_dose_ddpm_v2.py \
-      --data_dir ~/vmat-diffusion-project/data/processed_npz \
-      --epochs 200 --batch_size 2 --exp_name ddpm_dose_v1 --seed 42 \
-      > runs/ddpm_dose_v1/training.log 2>&1 &
+  python scripts/train_dose_ddpm_v2.py --data_dir ./processed --epochs 200
   ```
-- Git commit for experiment: `bdc6939` (with RAM caching)
-- Test cases held out: case_0007, case_0021 (same as baseline)
-- Monitor progress:
+- **To run with watchdog (auto-recovery):**
   ```bash
-  tail -50 ~/vmat-diffusion-project/runs/ddpm_dose_v1/training.log
-  cat ~/vmat-diffusion-project/runs/ddpm_dose_v1/version_1/metrics.csv
+  cd ~/vmat-diffusion-project
+  nohup ./scripts/training_watchdog.sh > runs/watchdog_output.log 2>&1 &
   ```
+- **If hangs occurred:** Check `runs/hang_diagnostics.log` for diagnostic info
 
 ### Next Steps 📋
 
@@ -216,9 +219,15 @@ Before starting work, review:
 | Data | Primary Location | Fallback |
 |------|------------------|----------|
 | Raw DICOM | `/mnt/i/anonymized_dicom/` | `./data/raw/` |
-| Processed NPZ | `/mnt/i/processed_npz/` | `./processed/` |
+| Processed NPZ (for training) | `./data/processed_npz/` (local SSD) | `/mnt/i/processed_npz/` |
 | Training runs | `./runs/` | - |
 | Predictions | `./predictions/` | - |
+
+**IMPORTANT (WSL Performance):**
+- **Always train from local SSD** (`./data/processed_npz/`), NOT from Windows mounts (`/mnt/`)
+- Windows mounts are slow (9p filesystem) and cause I/O bottlenecks during training
+- The symlink `./processed` should point to `./data/processed_npz/` (local)
+- Copy data to local if needed: `cp -r /mnt/i/processed_npz ./data/`
 
 Scripts auto-detect paths (check local first, then external drive).
 
@@ -259,8 +268,32 @@ pip install -r requirements.txt
 
 **Notes:**
 - Baseline U-Net: ~8 GB VRAM during training
-- DDPM: ~16-20 GB VRAM during training
+- DDPM: ~23 GB VRAM during training (uses most of RTX 3090)
 - Gamma computation is CPU/RAM intensive (~3 GB per case)
+
+### WSL2-Specific Settings (Critical for Stability)
+
+The training scripts have been tuned for WSL2 stability:
+
+**DataLoader settings** (in `train_dose_ddpm_v2.py`):
+- `num_workers=2` (not 4) - prevents dataloader deadlocks
+- `persistent_workers=False` - disabled for WSL stability
+- `prefetch_factor=2` - limits memory queue size
+
+**Why these matter:**
+- WSL2 has limited shared memory and IPC can deadlock with many workers
+- `persistent_workers=True` caused worker processes to hang on WSL
+- Higher worker counts (4+) led to training stalls after several epochs
+
+**If training hangs:**
+1. Kill training: `pkill -f train_dose_ddpm`
+2. Restart WSL: `wsl --shutdown` (from PowerShell)
+3. Reopen terminal and restart training
+
+**DO NOT:**
+- Cache all training data in RAM (causes WSL memory pressure → GPU driver errors)
+- Use more than 2 dataloader workers on WSL
+- Train from Windows mounts (`/mnt/`) - copy to local SSD first
 
 ---
 
@@ -330,6 +363,55 @@ When you receive new cases (100+, 750+):
 | `deterministic=True` error | Trilinear upsample | Use `deterministic="warn"` |
 | OOM during training | Batch/patch too large | Reduce `batch_size` or `patch_size` |
 | Loss goes NaN | Learning rate too high | Reduce `lr` by 10x |
+| Training hangs/stalls | Dataloader deadlock on WSL | Use `num_workers=2`, disable `persistent_workers` |
+| WSL crashes / GPU errors | RAM caching + WSL memory pressure | Don't cache data in RAM; use disk loading |
+| Slow I/O, bursty GPU util | Data on Windows mount (`/mnt/`) | Copy data to WSL filesystem (`~/` or `./data/`) |
+| CUDA driver errors | WSL2 GPU passthrough issues | Run `wsl --shutdown` from PowerShell, restart |
+
+### Training Watchdog (Auto-Recovery)
+
+A diagnostic watchdog script monitors training and auto-restarts on hangs while capturing diagnostic info.
+
+**Location:** `scripts/training_watchdog.sh`
+
+**What it does:**
+1. Monitors `metrics.csv` for progress every 60 seconds
+2. If no progress for 3 minutes, captures detailed diagnostics:
+   - Process states (main + workers)
+   - CPU/memory per process
+   - GPU state
+   - System memory
+   - dmesg output
+3. Logs diagnostics to `runs/hang_diagnostics.log`
+4. Kills hung processes and restarts training
+5. Logs all activity to `runs/watchdog.log`
+
+**To start watchdog:**
+```bash
+cd ~/vmat-diffusion-project
+nohup ./scripts/training_watchdog.sh > runs/watchdog_output.log 2>&1 &
+```
+
+**To check watchdog status:**
+```bash
+tail -20 runs/watchdog.log
+```
+
+**To analyze hang patterns:**
+```bash
+cat runs/hang_diagnostics.log
+```
+
+**To stop watchdog:**
+```bash
+pkill -f training_watchdog.sh
+```
+
+**IMPORTANT:** After a hang, check `runs/hang_diagnostics.log` for patterns before dismissing. Common patterns:
+- Workers in `D` (uninterruptible sleep) state → I/O issue
+- Workers in `S` state but not progressing → deadlock
+- GPU memory full → OOM during validation
+- Process died → crash (check dmesg)
 
 ### Inference Issues
 
@@ -379,4 +461,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-19 (Added hardware reqs, structure naming, troubleshooting, data workflow)*
+*Last updated: 2026-01-19 (Added training watchdog script for hang detection and auto-recovery)*
