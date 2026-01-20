@@ -248,28 +248,33 @@ Show what components matter:
 
 ## 8. File Organization
 
+**Primary Location:** `C:\Users\Bill\vmat-diffusion-project` (Windows)
+
+See `docs/EXPERIMENT_STRUCTURE.md` for detailed structure.
+
 ```
 vmat-diffusion-project/
-├── docs/
-│   ├── SCIENTIFIC_BEST_PRACTICES.md  # This file
-│   └── ...
 ├── notebooks/
-│   ├── EXPERIMENTS_INDEX.md          # Experiment log
-│   ├── 2026-01-19_baseline_unet_experiment.ipynb
-│   ├── 2026-01-XX_ddpm_experiment.ipynb
-│   └── ...
+│   ├── EXPERIMENTS_INDEX.md          # MASTER experiment log (single source of truth)
+│   ├── TEMPLATE_experiment.ipynb     # Copy for new experiments
+│   └── YYYY-MM-DD_<experiment>.ipynb # One per experiment
 ├── runs/                             # Training outputs
-│   ├── baseline_unet_run1/
-│   │   ├── checkpoints/
-│   │   ├── training_config.json
-│   │   ├── training_summary.json
-│   │   └── training_curves.png
-│   └── ...
-├── scripts/                          # Training/inference code
-└── predictions/                      # Inference outputs
+│   └── <experiment_name>/
+│       ├── checkpoints/
+│       ├── training_config.json
+│       ├── training_summary.json
+│       └── epoch_metrics.csv
+├── experiments/                      # Optimization experiment outputs
+│   └── phase<N>_<name>/
+├── predictions/                      # Inference outputs
+├── docs/
+│   ├── DDPM_OPTIMIZATION_PLAN.md     # Current optimization focus
+│   ├── EXPERIMENT_STRUCTURE.md       # Organization guidelines
+│   └── SCIENTIFIC_BEST_PRACTICES.md  # This file
+└── scripts/                          # Training/inference code
 ```
 
 ---
 
 *Document created: 2026-01-19*
-*Last updated: 2026-01-19*
+*Last updated: 2026-01-20 (Updated file organization to match EXPERIMENT_STRUCTURE.md)*

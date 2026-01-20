@@ -118,7 +118,6 @@ These experiments use the existing checkpoint and only modify inference.
 2. `git add -A && git commit -m "Pre-experiment: <name>"`
 3. Record commit hash
 4. Create notebook from template
-5. Update `docs/EXPERIMENT_LOG.md` "Latest Status" section
 
 ### During Each Experiment:
 1. Log all hyperparameters
@@ -128,9 +127,8 @@ These experiments use the existing checkpoint and only modify inference.
 5. Use TodoWrite to show visible progress
 
 ### After Each Experiment:
-1. Update `docs/EXPERIMENT_LOG.md` with results (append to Running Notes)
+1. Update `notebooks/EXPERIMENTS_INDEX.md` (single source of truth)
 2. Update Results Tracking table in this file
-3. Update EXPERIMENTS_INDEX.md
 4. Save figures (300 DPI, PNG + PDF) to `experiments/<phase>/figures/`
 5. Write conclusions in notebook
 6. `git commit -m "Results: <name> - <key finding>"`
