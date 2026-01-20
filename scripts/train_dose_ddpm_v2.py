@@ -290,11 +290,13 @@ class GPUMemoryCallback(Callback):
 class VMATDosePatchDataset(Dataset):
     """
     Loads .npz files and extracts random 3D patches for training.
-    
+
     Uses SDFs (masks_sdf) instead of binary masks for smooth gradients.
     Patches are centered on regions with dose > threshold to focus learning.
+
+    All data is cached in RAM at initialization to avoid I/O bottlenecks.
     """
-    
+
     def __init__(
         self,
         data_dir: str,
@@ -303,22 +305,29 @@ class VMATDosePatchDataset(Dataset):
         augment: bool = False,
         mode: str = 'train',  # 'train', 'val', 'test'
         dose_threshold: float = 0.1,  # Focus on regions with dose > 10% Rx
+        cache_data: bool = True,  # Cache all data in RAM
     ):
         self.data_dir = Path(data_dir)
         self.patch_size = patch_size
         self.patches_per_volume = patches_per_volume
         self.augment = augment and (mode == 'train')
         self.dose_threshold = dose_threshold
-        
+        self.cache_data = cache_data
+
         # Find all .npz files
         self.files = sorted(list(self.data_dir.glob("*.npz")))
         if not self.files:
             raise ValueError(f"No .npz files found in {data_dir}")
-        
+
         print(f"Found {len(self.files)} cases for {mode}")
-        
+
         # Validate first file structure
         self._validate_file_structure(self.files[0])
+
+        # Cache all data in memory
+        self._data_cache = None
+        if self.cache_data:
+            self._load_all_data(mode)
     
     def _validate_file_structure(self, filepath: Path):
         """Check that file has expected keys from v2.2 preprocessing."""
@@ -342,25 +351,48 @@ class VMATDosePatchDataset(Dataset):
             raise ValueError(f"Expected 8 SDF channels, got {sdf_shape[0]}")
         
         print(f"Validated file structure: CT {ct_shape}, SDF {sdf_shape}")
-    
+
+    def _load_all_data(self, mode: str):
+        """Load all NPZ files into memory to avoid I/O bottlenecks."""
+        print(f"Caching {len(self.files)} {mode} files in RAM...")
+        self._data_cache = []
+        total_bytes = 0
+        for i, f in enumerate(self.files):
+            data = np.load(f, allow_pickle=True)
+            cached = {
+                'ct': data['ct'].astype(np.float32),
+                'dose': data['dose'].astype(np.float32),
+                'masks_sdf': data['masks_sdf'].astype(np.float32),
+                'constraints': data['constraints'].astype(np.float32),
+                'metadata': data['metadata'].item() if 'metadata' in data.files else {},
+            }
+            self._data_cache.append(cached)
+            total_bytes += cached['ct'].nbytes + cached['dose'].nbytes + cached['masks_sdf'].nbytes
+            if (i + 1) % 5 == 0 or i == len(self.files) - 1:
+                print(f"  Cached {i + 1}/{len(self.files)} files")
+        print(f"Data caching complete. Using ~{total_bytes / 1e9:.1f} GB RAM for {mode}")
+
     def __len__(self):
         return len(self.files) * self.patches_per_volume
-    
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         # Determine which file and which patch
         file_idx = idx // self.patches_per_volume
         patch_idx = idx % self.patches_per_volume
-        
-        # Load data
-        data = np.load(self.files[file_idx], allow_pickle=True)
-        
-        ct = data['ct'].astype(np.float32)              # (H, W, D)
-        dose = data['dose'].astype(np.float32)          # (H, W, D)
-        masks_sdf = data['masks_sdf'].astype(np.float32)  # (8, H, W, D)
-        constraints = data['constraints'].astype(np.float32)  # (13,)
-        
-        # Extract metadata for potential use
-        metadata = data['metadata'].item() if 'metadata' in data.files else {}
+
+        # Load data from cache or disk
+        if self._data_cache is not None:
+            cached = self._data_cache[file_idx]
+            ct = cached['ct']
+            dose = cached['dose']
+            masks_sdf = cached['masks_sdf']
+            constraints = cached['constraints']
+        else:
+            data = np.load(self.files[file_idx], allow_pickle=True)
+            ct = data['ct'].astype(np.float32)              # (H, W, D)
+            dose = data['dose'].astype(np.float32)          # (H, W, D)
+            masks_sdf = data['masks_sdf'].astype(np.float32)  # (8, H, W, D)
+            constraints = data['constraints'].astype(np.float32)  # (13,)
         
         # Get volume shape
         H, W, D = ct.shape
@@ -499,28 +531,60 @@ class VMATDoseFullVolumeDataset(Dataset):
     """
     Dataset for validation/inference on full volumes.
     Returns the complete volume without patching.
+
+    All data is cached in RAM at initialization to avoid I/O bottlenecks.
     """
-    
-    def __init__(self, data_dir: str):
+
+    def __init__(self, data_dir: str, cache_data: bool = True):
         self.data_dir = Path(data_dir)
         self.files = sorted(list(self.data_dir.glob("*.npz")))
-    
+        self.cache_data = cache_data
+
+        # Cache all data in memory
+        self._data_cache = None
+        if self.cache_data and len(self.files) > 0:
+            self._load_all_data()
+
+    def _load_all_data(self):
+        """Load all NPZ files into memory to avoid I/O bottlenecks."""
+        print(f"Caching {len(self.files)} validation files in RAM...")
+        self._data_cache = []
+        for i, f in enumerate(self.files):
+            data = np.load(f, allow_pickle=True)
+            self._data_cache.append({
+                'ct': data['ct'].astype(np.float32),
+                'dose': data['dose'].astype(np.float32),
+                'masks_sdf': data['masks_sdf'].astype(np.float32),
+                'masks': data['masks'].astype(np.float32),
+                'constraints': data['constraints'].astype(np.float32),
+                'metadata': data['metadata'].item() if 'metadata' in data.files else {},
+            })
+        print(f"Validation data caching complete.")
+
     def __len__(self):
         return len(self.files)
-    
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        data = np.load(self.files[idx], allow_pickle=True)
-        
-        ct = torch.from_numpy(data['ct'].astype(np.float32)).unsqueeze(0)
-        dose = torch.from_numpy(data['dose'].astype(np.float32)).unsqueeze(0)
-        masks_sdf = torch.from_numpy(data['masks_sdf'].astype(np.float32))
-        masks_binary = torch.from_numpy(data['masks'].astype(np.float32))
-        constraints = torch.from_numpy(data['constraints'].astype(np.float32))
-        
+        # Load from cache or disk
+        if self._data_cache is not None:
+            cached = self._data_cache[idx]
+            ct = torch.from_numpy(cached['ct']).unsqueeze(0)
+            dose = torch.from_numpy(cached['dose']).unsqueeze(0)
+            masks_sdf = torch.from_numpy(cached['masks_sdf'])
+            masks_binary = torch.from_numpy(cached['masks'])
+            constraints = torch.from_numpy(cached['constraints'])
+            metadata = cached['metadata']
+        else:
+            data = np.load(self.files[idx], allow_pickle=True)
+            ct = torch.from_numpy(data['ct'].astype(np.float32)).unsqueeze(0)
+            dose = torch.from_numpy(data['dose'].astype(np.float32)).unsqueeze(0)
+            masks_sdf = torch.from_numpy(data['masks_sdf'].astype(np.float32))
+            masks_binary = torch.from_numpy(data['masks'].astype(np.float32))
+            constraints = torch.from_numpy(data['constraints'].astype(np.float32))
+            metadata = data['metadata'].item() if 'metadata' in data.files else {}
+
         condition = torch.cat([ct, masks_sdf], dim=0)
-        
-        metadata = data['metadata'].item() if 'metadata' in data.files else {}
-        
+
         return {
             'condition': condition,
             'dose': dose,
