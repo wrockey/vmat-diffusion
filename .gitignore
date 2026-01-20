@@ -64,3 +64,4 @@ Thumbs.db
 # Optional: ignore large downloads or caches
 downloads/
 cache/processed
+*.bak
