@@ -10,7 +10,7 @@ This document tracks all experiments conducted in this project for reproducibili
 |------|---------------|----------|-------|-------------|--------|
 | 2026-01-19 | baseline_unet_run1 | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
 | 2026-01-19 | baseline_unet_test_eval | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
-| 2026-01-19 | ddpm_dose_v1 | TBD | SimpleUNet3D+DDPM (git: 3efbea0) | TBD | **In Progress** |
+| 2026-01-19 | ddpm_dose_v1 | TBD | SimpleUNet3D+DDPM (git: 3efbea0) | 12.19 Gy MAE (val) | Complete (underperformed baseline) |
 
 ---
 
@@ -45,11 +45,15 @@ Examples:
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
 ### 2. Diffusion Models (DDPM)
-- [ ] ddpm_dose_v1 (**In Progress** - git: 3efbea0, Native Windows/Pinokio)
+- [x] ~~ddpm_dose_v1~~ (Complete - 2026-01-20, git: 3efbea0)
   - Run directory: `runs/vmat_dose_ddpm/`
-  - Previous attempts: WSL2 hangs, Pinokio TDR crash (0x113)
-  - Current: Stable training, GPU temps 44-58°C
-  - Epoch 6+ running, MAE trending down (~15 Gy)
+  - Platform: Native Windows/Pinokio (stable, GPU 44-58°C)
+  - **Results: 12.19 Gy MAE (val)** - underperformed baseline (3.73 Gy)
+  - Training: 37 epochs (early stopped), 1.94 hours
+  - Best checkpoint: `checkpoints/best-epoch=015-val/mae_gy=12.19.ckpt`
+  - **Issue: Loss vs MAE disconnect** - val_loss decreased but MAE was volatile (12-64 Gy range)
+  - Analysis: Diffusion sampling produces unstable dose predictions despite good denoising
+- [ ] ddpm_dose_v2 (Planned - address sampling stability)
 - [ ] ddpm_dose_v2_conditioned (Planned)
 
 ### 3. Ablation Studies
@@ -101,4 +105,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-19 (DDPM training running on native Windows/Pinokio after WSL2 stability issues)*
+*Last updated: 2026-01-20 (DDPM v1 complete - underperformed baseline, needs sampling stability improvements)*

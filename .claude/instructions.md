@@ -75,47 +75,39 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 
 **Analysis:** The baseline learns a "blurred" dose pattern - good overall magnitude but misses sharp gradients needed for clinical acceptability. This motivates the DDPM approach.
 
-### In Progress 🔄
+**2026-01-20: DDPM v1 Training Complete**
+- Platform: Native Windows/Pinokio (stable after WSL2 issues)
+- Training time: 1.94 hours, 37 epochs (early stopped, patience=20)
+- **Best MAE: 12.19 Gy** at epoch 15 (target: <3 Gy)
+- **Result: Underperformed baseline** (baseline: 3.73 Gy val MAE)
+- Checkpoint: `runs/vmat_dose_ddpm/checkpoints/best-epoch=015-val/mae_gy=12.19.ckpt`
 
-**2026-01-19: DDPM Training - Moving to Native Windows/Pinokio**
+**Key Finding: Loss vs MAE Disconnect**
+- val_loss decreased steadily (0.108 → 0.004) ✓
+- val_mae was extremely volatile (12-64 Gy range) ✗
+- Diffusion model learns denoising well but produces unstable dose predictions
+- Likely cause: sampling process introduces variability not captured by noise prediction loss
 
-WSL2 had persistent issues:
-- Training kept hanging every ~3 minutes (dataloader/GPU communication issues)
-- Watchdog script auto-restarted but hangs continued
-- Attempted native Windows via Pinokio - initial run crashed with **dxgkrnl 0x113 (TDR) error**
-
-**Current approach:** Retry on native Windows with **safe training mode** (reduced GPU load).
-
-**Status (2026-01-19 21:20):** Training running successfully on native Windows. Epoch 0 in progress, GPU temp stable at 44°C.
-
-**Known issue:** Gamma validation skipped due to missing numba - fix with `pip install pymedphys[tests]` after training completes.
-
-**Windows Project Location:** `C:\Users\Bill\vmat-diffusion-project`
-
-**To start safe training (from Windows cmd):**
-```cmd
-cd C:\Users\Bill\vmat-diffusion-project
-start_training_safe.bat
-```
-
-**Safe mode settings:**
-- Batch size: 1 (reduced from 2)
-- Base channels: 32 (reduced from 48)
-- GPU cooling enabled (0.5s pause every 10 batches)
-- Data: `I:\processed_npz`
-
-**Monitor GPU temps** with GPU-Z - target < 80°C.
-
-**Previous WSL attempts archived in:**
+**Archived runs:**
+- `runs/vmat_dose_ddpm/` - Completed DDPM v1 (this run)
 - `runs/vmat_dose_ddpm_wsl_hangs/` - WSL runs with repeated hangs
 - `runs/vmat_dose_ddpm_pinokio_crashed/` - Pinokio run that crashed with 0x113
 
+### In Progress 🔄
+
+None currently.
+
 ### Next Steps 📋
 
-1. **Train DDPM model** - Main diffusion model (~8-16 hours)
-2. **Compare baseline vs DDPM** - Document improvements in gamma/DVH
-3. **Create visualization notebook** - DVH plots, dose slices comparison
-4. **Analyze why baseline underdoses PTVs** - Loss function investigation
+1. **Analyze DDPM failure modes** - Why is MAE so volatile despite low loss?
+2. **Try more sampling steps** - Current may be too few for stable predictions
+3. **Experiment with loss functions** - Add dose-specific loss terms
+4. **Create comparison notebook** - Baseline vs DDPM visualization
+5. **Install numba** - `pip install pymedphys[tests]` for gamma metrics
+6. **Consider alternative approaches:**
+   - Direct regression with improved architecture
+   - Conditional flow matching instead of DDPM
+   - Ensemble methods
 
 ### Future Work 📝
 
@@ -526,4 +518,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-19 (Moving to native Windows/Pinokio due to WSL2 stability issues; added GPU cooling options)*
+*Last updated: 2026-01-20 (DDPM v1 complete - 12.19 Gy MAE, underperformed baseline; need to address sampling stability)*
