@@ -10,7 +10,7 @@ This document tracks all experiments conducted in this project for reproducibili
 |------|---------------|----------|-------|-------------|--------|
 | 2026-01-19 | baseline_unet_run1 | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
 | 2026-01-19 | baseline_unet_test_eval | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
-| 2026-01-19 | ddpm_dose_v1 | TBD | SimpleUNet3D+DDPM | TBD | **In Progress** (Native Windows/Pinokio) |
+| 2026-01-19 | ddpm_dose_v1 | TBD | SimpleUNet3D+DDPM (git: 3efbea0) | TBD | **In Progress** |
 
 ---
 
@@ -45,7 +45,8 @@ Examples:
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
 ### 2. Diffusion Models (DDPM)
-- [ ] ddpm_dose_v1 (**In Progress** - Native Windows/Pinokio, run: `vmat_dose_ddpm`)
+- [ ] ddpm_dose_v1 (**In Progress** - git: 3efbea0, Native Windows/Pinokio)
+  - Run directory: `runs/vmat_dose_ddpm/`
   - Previous attempts: WSL2 hangs, Pinokio TDR crash (0x113)
   - Current: Stable training, GPU temps 44-58°C
   - Epoch 6+ running, MAE trending down (~15 Gy)
