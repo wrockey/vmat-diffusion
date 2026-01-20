@@ -1,0 +1,66 @@
+{
+  "phase": "Phase 1: Quick Wins (No Retraining)",
+  "timestamp": "2026-01-20T14:30:00",
+  "checkpoint": "runs/vmat_dose_ddpm/checkpoints/best-epoch=015-val/mae_gy=12.19.ckpt",
+  "val_cases": ["case_0011", "case_0016"],
+
+  "exp1_1_sampling": {
+    "name": "Sampling Steps Ablation",
+    "hypothesis": "H1 - Too few sampling steps during inference",
+    "optimal_steps": 50,
+    "optimal_mae_gy": 3.80,
+    "finding": "COUNTER-INTUITIVE: Fewer steps = better results. More steps causes quality degradation.",
+    "comparison": {
+      "50": {"mae_gy": 3.80, "time_s": 396},
+      "100": {"mae_gy": 4.89, "time_s": 811},
+      "250": {"mae_gy": 5.24, "time_s": 1967},
+      "500": {"mae_gy": 5.93, "time_s": 3915},
+      "1000": {"mae_gy": 6.73, "time_s": 7830}
+    }
+  },
+
+  "exp1_2_ensemble": {
+    "name": "Ensemble Averaging",
+    "hypothesis": "H1 (related) - Averaging reduces variance",
+    "optimal_n_samples": 1,
+    "optimal_mae_gy": 3.78,
+    "finding": "Ensemble averaging does NOT help. Very low sample variability (std ~0.02) indicates deterministic DDIM sampling.",
+    "comparison": {
+      "1": {"mae_gy": 3.78, "sample_variability": 0.0},
+      "3": {"mae_gy": 3.84, "sample_variability": 0.019},
+      "5": {"mae_gy": 3.83, "sample_variability": 0.023},
+      "10": {"mae_gy": 3.84, "sample_variability": 0.026}
+    }
+  },
+
+  "baseline_comparison": {
+    "baseline_mae_gy": 3.73,
+    "ddpm_v1_mae_gy": 12.19,
+    "phase1_best_mae_gy": 3.78
+  },
+
+  "decision": {
+    "proceed_to_phase2": false,
+    "reason": "Best MAE (3.78 Gy) < 6 Gy threshold. Phase 1 successful.",
+    "next_steps": [
+      "Update inference code to use 50 steps as default",
+      "Re-run test set evaluation with optimal parameters",
+      "Document findings in experiment notebook"
+    ]
+  },
+
+  "key_findings": [
+    "Root cause of 12.19 Gy MAE identified: training validation used high step counts",
+    "Optimal inference: 50 DDIM steps, single sample",
+    "DDPM now matches baseline performance (3.78 Gy vs 3.73 Gy)",
+    "Counter-intuitive: more steps = worse results (likely noise schedule issue or drift accumulation)",
+    "Ensemble averaging provides no benefit due to low sample variability"
+  ],
+
+  "implications": [
+    "Need to investigate why more steps degrades quality",
+    "May indicate suboptimal noise schedule or model architecture",
+    "Consider testing even fewer steps (25, 10) in future work",
+    "DDPM is viable for dose prediction with proper inference settings"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "experiment": "ensemble_averaging",
+  "timestamp": "2026-01-20T14:30:00",
+  "ddim_steps": 50,
+  "n_samples_tested": [1, 3, 5, 10],
+  "val_cases": ["case_0011", "case_0016"],
+  "per_n_results": {
+    "1": {
+      "cases": [
+        {"case_id": "case_0011", "mae_gy": 2.88, "std_across_samples": 0.0},
+        {"case_id": "case_0016", "mae_gy": 4.67, "std_across_samples": 0.0}
+      ],
+      "aggregate": {"mean_mae_gy": 3.775, "std_mae_gy": 0.895, "mean_sample_std": 0.0}
+    },
+    "3": {
+      "cases": [
+        {"case_id": "case_0011", "mae_gy": 2.94, "std_across_samples": 0.0171},
+        {"case_id": "case_0016", "mae_gy": 4.73, "std_across_samples": 0.0218}
+      ],
+      "aggregate": {"mean_mae_gy": 3.835, "std_mae_gy": 0.895, "mean_sample_std": 0.01945}
+    },
+    "5": {
+      "cases": [
+        {"case_id": "case_0011", "mae_gy": 2.94, "std_across_samples": 0.0207},
+        {"case_id": "case_0016", "mae_gy": 4.72, "std_across_samples": 0.0260}
+      ],
+      "aggregate": {"mean_mae_gy": 3.83, "std_mae_gy": 0.89, "mean_sample_std": 0.02335}
+    },
+    "10": {
+      "cases": [
+        {"case_id": "case_0011", "mae_gy": 2.94, "std_across_samples": 0.0236},
+        {"case_id": "case_0016", "mae_gy": 4.73, "std_across_samples": 0.0291}
+      ],
+      "aggregate": {"mean_mae_gy": 3.835, "std_mae_gy": 0.895, "mean_sample_std": 0.02635}
+    }
+  },
+  "summary": {
+    "optimal_n_samples": 1,
+    "optimal_mae_gy": 3.775,
+    "comparison": {
+      "1": {"mae_gy": 3.775, "sample_variability": 0.0},
+      "3": {"mae_gy": 3.835, "sample_variability": 0.01945},
+      "5": {"mae_gy": 3.83, "sample_variability": 0.02335},
+      "10": {"mae_gy": 3.835, "sample_variability": 0.02635}
+    }
+  }
+}

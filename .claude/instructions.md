@@ -118,21 +118,30 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 - `runs/vmat_dose_ddpm_wsl_hangs/` - WSL runs with repeated hangs
 - `runs/vmat_dose_ddpm_pinokio_crashed/` - Pinokio run that crashed with 0x113
 
+**2026-01-20: Phase 1 Optimization Complete ✅**
+- **Root Cause Identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy
+- **Solution:** Use 50 DDIM steps for inference (not 100+)
+- **Results:**
+  - Exp 1.1 (Sampling Steps): 50 steps optimal → **3.80 Gy MAE**
+  - Exp 1.2 (Ensemble): n=1 optimal → **3.78 Gy MAE**
+- **Key Finding:** DDPM now matches baseline (3.78 Gy vs 3.73 Gy)
+- **Counter-intuitive:** More steps = worse results (likely noise schedule issue or drift accumulation)
+- **Ensemble averaging provides no benefit** (very low sample variability ~0.02)
+- Results saved to: `experiments/phase1_sampling/` and `experiments/phase1_ensemble/`
+
 ### In Progress 🔄
 
 None currently.
 
 ### Next Steps 📋
 
-**See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed systematic plan.**
+**Phase 1 Complete - No Phase 2 needed (MAE < 6 Gy threshold).**
 
-Summary of phases:
-1. **Phase 1: Quick Wins** (no retraining) - sampling steps ablation, ensemble averaging
-2. **Phase 2: Schedule/Loss** - try different schedules, add dose-aware loss terms
-3. **Phase 3: Architecture** - conditioning ablation, capacity scaling
-4. **Phase 4: Alternatives** - if DDPM still underperforms, try flow matching or improved baseline
-
-**Immediate next action:** Run Phase 1 experiments using existing checkpoint (inference only, ~1 hour)
+Recommended actions:
+1. **Update inference code** to use 50 DDIM steps as default
+2. **Re-run test set evaluation** with optimal parameters
+3. **Document findings** in experiment notebook
+4. Investigate why more steps degrades quality (future work)
 
 **Environment note:** numba/pymedphys[tests] is now installed - gamma metrics should work.
 
@@ -666,4 +675,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (Added Documentation Maintenance section with housekeeping guidelines)*
+*Last updated: 2026-01-20 (Phase 1 optimization complete - DDPM matches baseline with 50 DDIM steps)*

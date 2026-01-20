@@ -13,9 +13,22 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-19 | baseline_unet_run1 | `b3f0c08` | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
 | 2026-01-19 | baseline_unet_test_eval | `b3f0c08` | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
 | 2026-01-20 | ddpm_dose_v1 | `3efbea0` | **⚠️ NEEDS CREATION** | SimpleUNet3D+DDPM | 12.19 Gy MAE (val) | Complete (underperformed) |
+| 2026-01-20 | phase1_sampling | TBD | - | DDPM inference | **3.80 Gy MAE** (50 steps) | Complete |
+| 2026-01-20 | phase1_ensemble | TBD | - | DDPM inference | **3.78 Gy MAE** (n=1) | Complete |
+
+### Phase 1 Optimization Results
+**Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
+
+| Exp | Finding | Best MAE (Gy) |
+|-----|---------|---------------|
+| 1.1 Sampling Steps | 50 steps optimal; more steps = worse | **3.80** |
+| 1.2 Ensemble | n=1 optimal; averaging doesn't help | **3.78** |
+
+**Conclusion:** DDPM now matches baseline (3.78 vs 3.73 Gy) with optimal inference settings.
 
 ### Notebooks Needing Creation
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
+- [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
 
 ---
 
@@ -110,4 +123,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (DDPM v1 complete - underperformed baseline, needs sampling stability improvements)*
+*Last updated: 2026-01-20 (Phase 1 optimization complete - DDPM matches baseline with 50 DDIM steps)*

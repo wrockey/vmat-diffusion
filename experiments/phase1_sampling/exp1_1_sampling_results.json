@@ -1,0 +1,209 @@
+{
+  "experiment": "sampling_steps_ablation",
+  "timestamp": "2026-01-20T06:49:43.296614",
+  "steps_tested": [
+    50,
+    100,
+    250,
+    500,
+    1000
+  ],
+  "val_cases": [
+    "case_0011",
+    "case_0016"
+  ],
+  "per_step_results": {
+    "50": {
+      "cases": [
+        {
+          "case_id": "case_0011",
+          "mae_gy": 2.8845317363739014,
+          "rmse_gy": 6.910343170166016,
+          "inference_time_s": 396.33087611198425,
+          "gamma_pass_rate": null
+        },
+        {
+          "case_id": "case_0016",
+          "mae_gy": 4.7065324783325195,
+          "rmse_gy": 10.143879890441895,
+          "inference_time_s": 395.7778718471527,
+          "gamma_pass_rate": null
+        }
+      ],
+      "mae_values": [
+        2.8845317363739014,
+        4.7065324783325195
+      ],
+      "inference_times": [
+        396.33087611198425,
+        395.7778718471527
+      ],
+      "gamma_values": [],
+      "aggregate": {
+        "mean_mae_gy": 3.7955321073532104,
+        "std_mae_gy": 0.9110003709793091,
+        "mean_inference_time_s": 396.0543739795685,
+        "mean_gamma_pass_rate": null
+      }
+    },
+    "100": {
+      "cases": [
+        {
+          "case_id": "case_0011",
+          "mae_gy": 4.015797138214111,
+          "rmse_gy": 7.3999924659729,
+          "inference_time_s": 808.0631723403931,
+          "gamma_pass_rate": null
+        },
+        {
+          "case_id": "case_0016",
+          "mae_gy": 5.757102012634277,
+          "rmse_gy": 10.483814239501953,
+          "inference_time_s": 814.5284423828125,
+          "gamma_pass_rate": null
+        }
+      ],
+      "mae_values": [
+        4.015797138214111,
+        5.757102012634277
+      ],
+      "inference_times": [
+        808.0631723403931,
+        814.5284423828125
+      ],
+      "gamma_values": [],
+      "aggregate": {
+        "mean_mae_gy": 4.886449575424194,
+        "std_mae_gy": 0.870652437210083,
+        "mean_inference_time_s": 811.2958073616028,
+        "mean_gamma_pass_rate": null
+      }
+    },
+    "250": {
+      "cases": [
+        {
+          "case_id": "case_0011",
+          "mae_gy": 4.738827705383301,
+          "rmse_gy": 8.980154037475586,
+          "inference_time_s": 1977.1503887176514,
+          "gamma_pass_rate": null
+        },
+        {
+          "case_id": "case_0016",
+          "mae_gy": 5.748229026794434,
+          "rmse_gy": 11.319035530090332,
+          "inference_time_s": 1957.7041327953339,
+          "gamma_pass_rate": null
+        }
+      ],
+      "mae_values": [
+        4.738827705383301,
+        5.748229026794434
+      ],
+      "inference_times": [
+        1977.1503887176514,
+        1957.7041327953339
+      ],
+      "gamma_values": [],
+      "aggregate": {
+        "mean_mae_gy": 5.243528366088867,
+        "std_mae_gy": 0.5047006607055664,
+        "mean_inference_time_s": 1967.4272607564926,
+        "mean_gamma_pass_rate": null
+      }
+    },
+    "500": {
+      "cases": [
+        {
+          "case_id": "case_0011",
+          "mae_gy": 5.501061916351318,
+          "rmse_gy": 9.745847702026367,
+          "inference_time_s": 3915.134561061859,
+          "gamma_pass_rate": null
+        },
+        {
+          "case_id": "case_0016",
+          "mae_gy": 6.361614227294922,
+          "rmse_gy": 11.746731758117676,
+          "inference_time_s": 3915.059125185013,
+          "gamma_pass_rate": null
+        }
+      ],
+      "mae_values": [
+        5.501061916351318,
+        6.361614227294922
+      ],
+      "inference_times": [
+        3915.134561061859,
+        3915.059125185013
+      ],
+      "gamma_values": [],
+      "aggregate": {
+        "mean_mae_gy": 5.93133807182312,
+        "std_mae_gy": 0.43027615547180176,
+        "mean_inference_time_s": 3915.096843123436,
+        "mean_gamma_pass_rate": null
+      }
+    },
+    "1000": {
+      "cases": [
+        {
+          "case_id": "case_0011",
+          "mae_gy": 6.344529151916504,
+          "rmse_gy": 10.542678833007812,
+          "inference_time_s": 7830.066438674927,
+          "gamma_pass_rate": null
+        },
+        {
+          "case_id": "case_0016",
+          "mae_gy": 7.120537757873535,
+          "rmse_gy": 12.295787811279297,
+          "inference_time_s": 7829.225152015686,
+          "gamma_pass_rate": null
+        }
+      ],
+      "mae_values": [
+        6.344529151916504,
+        7.120537757873535
+      ],
+      "inference_times": [
+        7830.066438674927,
+        7829.225152015686
+      ],
+      "gamma_values": [],
+      "aggregate": {
+        "mean_mae_gy": 6.7325334548950195,
+        "std_mae_gy": 0.3880043029785156,
+        "mean_inference_time_s": 7829.645795345306,
+        "mean_gamma_pass_rate": null
+      }
+    }
+  },
+  "summary": {
+    "optimal_steps": 50,
+    "optimal_mae_gy": 3.7955321073532104,
+    "optimal_inference_time_s": 396.0543739795685,
+    "comparison": {
+      "50": {
+        "mae_gy": 3.7955321073532104,
+        "time_s": 396.0543739795685
+      },
+      "100": {
+        "mae_gy": 4.886449575424194,
+        "time_s": 811.2958073616028
+      },
+      "250": {
+        "mae_gy": 5.243528366088867,
+        "time_s": 1967.4272607564926
+      },
+      "500": {
+        "mae_gy": 5.93133807182312,
+        "time_s": 3915.096843123436
+      },
+      "1000": {
+        "mae_gy": 6.7325334548950195,
+        "time_s": 7829.645795345306
+      }
+    }
+  }
+}

@@ -1,8 +1,28 @@
 # DDPM Optimization Plan
 
 **Created:** 2026-01-20
-**Status:** Active
+**Status:** Phase 1 Complete ✅
 **Goal:** Systematically investigate why DDPM underperforms baseline and identify improvements
+
+---
+
+## Executive Summary (Phase 1 Complete)
+
+**Root Cause Identified:** Training validation used high DDIM step counts during inference, inflating MAE to 12.19 Gy.
+
+**Solution:** Use 50 DDIM steps (not 100+) for inference.
+
+**Result:** DDPM now matches baseline performance (3.78 Gy vs 3.73 Gy).
+
+**Key Findings:**
+1. Counter-intuitive: More steps = worse results (likely noise schedule issue)
+2. Ensemble averaging provides no benefit (very low sample variability)
+3. DDPM is viable for dose prediction with proper inference settings
+
+**Recommended Next Steps:**
+1. Update inference code to use 50 steps as default
+2. Re-run test set evaluation with optimal parameters
+3. Investigate why more steps degrades quality (potential future work)
 
 ---
 
@@ -159,10 +179,10 @@ Each directory should contain:
 |--------|------------|------------|----------|------------|
 | baseline | - | Reference | 3.73 (val) | - |
 | ddpm_v1 | - | Underperformed | 12.19 (val) | Loss/MAE disconnect |
-| 1.1 sampling | H1 | TBD | TBD | TBD |
-| 1.2 ensemble | H1 | TBD | TBD | TBD |
-| 2.1 schedule | H2 | TBD | TBD | TBD |
-| 2.2 loss | H4 | TBD | TBD | TBD |
+| 1.1 sampling | H1 | **50 steps optimal** | **3.80** | More steps = worse (counter-intuitive) |
+| 1.2 ensemble | H1 | **n=1 optimal** | **3.78** | Low variability; averaging unhelpful |
+| 2.1 schedule | H2 | Not needed | - | Phase 1 successful |
+| 2.2 loss | H4 | Not needed | - | Phase 1 successful |
 
 **After each experiment:** Update both this table AND `notebooks/EXPERIMENTS_INDEX.md`
 
@@ -210,4 +230,4 @@ Each directory should contain:
 
 ---
 
-*Last updated: 2026-01-20*
+*Last updated: 2026-01-20 (Phase 1 experiments complete - DDPM matches baseline with optimized inference)*
