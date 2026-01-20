@@ -1,16 +1,21 @@
 # Experiments Index
 
-This document tracks all experiments conducted in this project for reproducibility and publication purposes.
+**MASTER LIST** - All experiments tracked here for reproducibility and publication.
+
+See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 
 ---
 
 ## Experiment Log
 
-| Date | Experiment ID | Notebook | Model | Best Metric | Status |
-|------|---------------|----------|-------|-------------|--------|
-| 2026-01-19 | baseline_unet_run1 | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
-| 2026-01-19 | baseline_unet_test_eval | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
-| 2026-01-19 | ddpm_dose_v1 | TBD | SimpleUNet3D+DDPM (git: 3efbea0) | 12.19 Gy MAE (val) | Complete (underperformed baseline) |
+| Date | Experiment ID | Git Hash | Notebook | Model | Best Metric | Status |
+|------|---------------|----------|----------|-------|-------------|--------|
+| 2026-01-19 | baseline_unet_run1 | `b3f0c08` | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
+| 2026-01-19 | baseline_unet_test_eval | `b3f0c08` | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
+| 2026-01-20 | ddpm_dose_v1 | `3efbea0` | **⚠️ NEEDS CREATION** | SimpleUNet3D+DDPM | 12.19 Gy MAE (val) | Complete (underperformed) |
+
+### Notebooks Needing Creation
+- [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 
 ---
 

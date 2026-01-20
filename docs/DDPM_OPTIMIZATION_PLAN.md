@@ -153,14 +153,20 @@ Each directory should contain:
 
 ## Results Tracking
 
-| Exp ID | Date | Hypothesis | Key Result | MAE (Gy) | Conclusion |
-|--------|------|------------|------------|----------|------------|
-| baseline | 2026-01-19 | - | Reference | 3.73 (val) | - |
-| ddpm_v1 | 2026-01-20 | - | Underperformed | 12.19 (val) | Loss/MAE disconnect |
-| 1.1 | TBD | H1 | TBD | TBD | TBD |
-| 1.2 | TBD | H1 | TBD | TBD | TBD |
-| 2.1 | TBD | H2 | TBD | TBD | TBD |
-| ... | ... | ... | ... | ... | ... |
+**Full experiment log:** `notebooks/EXPERIMENTS_INDEX.md` (single source of truth)
+
+**Optimization-specific quick reference:**
+
+| Exp ID | Hypothesis | Key Result | MAE (Gy) | Conclusion |
+|--------|------------|------------|----------|------------|
+| baseline | - | Reference | 3.73 (val) | - |
+| ddpm_v1 | - | Underperformed | 12.19 (val) | Loss/MAE disconnect |
+| 1.1 sampling | H1 | TBD | TBD | TBD |
+| 1.2 ensemble | H1 | TBD | TBD | TBD |
+| 2.1 schedule | H2 | TBD | TBD | TBD |
+| 2.2 loss | H4 | TBD | TBD | TBD |
+
+**After each experiment:** Update both this table AND `notebooks/EXPERIMENTS_INDEX.md`
 
 ---
 
