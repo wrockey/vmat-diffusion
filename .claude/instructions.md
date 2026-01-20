@@ -531,6 +531,127 @@ python scripts/inference_baseline_unet.py --checkpoint <path> --input_dir <dir>
 
 ---
 
+## Documentation Maintenance
+
+### When to Update Each Document
+
+| Document | Update When | What to Update |
+|----------|-------------|----------------|
+| `.claude/instructions.md` | After any significant work | Progress Log, Next Steps, In Progress |
+| `notebooks/EXPERIMENTS_INDEX.md` | After EVERY experiment | Add row with date, ID, git hash, metrics |
+| `docs/CHANGELOG.md` | New features, bug fixes, breaking changes | Version entry with date and details |
+| `docs/DDPM_OPTIMIZATION_PLAN.md` | After optimization experiments | Results Tracking table, conclusions |
+| `docs/README.md` | API changes, new scripts, architecture changes | Relevant sections |
+
+### CHANGELOG Guidelines
+
+Update `docs/CHANGELOG.md` when:
+- **Adding new features** (new scripts, new model architectures, new metrics)
+- **Fixing bugs** (preprocessing issues, training fixes)
+- **Breaking changes** (file format changes, API changes)
+- **Deprecating code** (moving scripts to `deprecated/`)
+
+Format:
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- New feature description
+
+### Changed
+- Modified behavior
+
+### Fixed
+- Bug fix description
+
+### Deprecated
+- What's deprecated and what to use instead
+```
+
+### File Organization Rules
+
+**New scripts:**
+- Production scripts → `scripts/`
+- One-off utilities → `scripts/` with clear docstring
+- Deprecated versions → `scripts/deprecated/`
+
+**When to deprecate:**
+- When a v2/v3 version replaces the original
+- Add `DEPRECATED: Use <new_script> instead` as first line of docstring
+- Move to `scripts/deprecated/` after confirming new version works
+
+**Naming conventions:**
+- Scripts: `snake_case.py` (e.g., `train_dose_ddpm_v2.py`)
+- Notebooks: `YYYY-MM-DD_<experiment_name>.ipynb`
+- Configs: `<purpose>_config.json`
+
+### Git Workflow
+
+**Commit message format:**
+```
+<type>: <short description>
+
+<optional body>
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+```
+
+**Types:**
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation only
+- `refactor:` - Code change that neither fixes nor adds
+- `test:` - Adding tests
+- `chore:` - Maintenance (deps, cleanup)
+
+**Tagging milestones:**
+```bash
+git tag -a v1.0-baseline -m "Baseline U-Net complete, 3.73 Gy MAE"
+git push origin --tags
+```
+
+Tag when:
+- Major model milestone achieved
+- Before breaking changes
+- Publication submission points
+
+### Cleanup Tasks
+
+**Periodic cleanup (weekly or before major work):**
+
+1. **Log files:** Delete `*.log` files from root (they're gitignored)
+   ```bash
+   rm -f *.log
+   ```
+
+2. **Old checkpoints:** Keep only `best.ckpt` and `last.ckpt` per run
+   ```bash
+   # Review before deleting
+   ls runs/*/checkpoints/
+   ```
+
+3. **Archived runs:** Move failed/test runs to archive or delete
+   - Keep runs referenced in EXPERIMENTS_INDEX.md
+   - Archive naming: `runs/<name>_archived/` or delete if not needed
+
+4. **Disk space check:**
+   ```bash
+   du -sh runs/* experiments/* predictions/*
+   ```
+
+### Cross-Document Consistency Checklist
+
+Before ending a work session, verify:
+
+- [ ] `instructions.md` Progress Log updated
+- [ ] `EXPERIMENTS_INDEX.md` has all experiments with git hashes
+- [ ] `CHANGELOG.md` updated if any code/features changed
+- [ ] `DDPM_OPTIMIZATION_PLAN.md` Results table updated (if running optimization)
+- [ ] All changes committed and pushed
+- [ ] `*Last updated*` timestamp updated in modified docs
+
+---
+
 ## Updating This File
 
 **IMPORTANT:** After completing significant work, update this file:
@@ -539,9 +660,10 @@ python scripts/inference_baseline_unet.py --checkpoint <path> --input_dir <dir>
 2. Add new items to "Next Steps" as they emerge
 3. Update "In Progress" when starting new work
 4. Keep the progress log as a running history
+5. Update the `*Last updated*` line at the bottom
 
 This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (DDPM v1 complete - 12.19 Gy MAE, underperformed baseline; need to address sampling stability)*
+*Last updated: 2026-01-20 (Added Documentation Maintenance section with housekeeping guidelines)*
