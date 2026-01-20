@@ -45,7 +45,7 @@ Examples:
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
 ### 2. Diffusion Models (DDPM)
-- [ ] ddpm_dose_v1 (**In Progress** - git: bdc6939, RAM caching fix)
+- [ ] ddpm_dose_v1 (**In Progress** - git: b3f0c08, WSL2 stability fixes)
 - [ ] ddpm_dose_v2_conditioned (Planned)
 
 ### 3. Ablation Studies
@@ -97,4 +97,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-19 (Added DDPM training in progress)*
+*Last updated: 2026-01-19 (Updated ddpm_dose_v1 commit to b3f0c08 - WSL2 stability fixes)*
