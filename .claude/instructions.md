@@ -22,13 +22,15 @@ call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
 cd C:\Users\Bill\vmat-diffusion-project
 ```
 
-### ❌ DO NOT USE
-- **WSL/WSL2** - Deprecated due to GPU stability issues, hangs, and TDR crashes
-- **`/mnt/c/...` paths** - These are WSL paths; use Windows paths (`C:\...`)
+### ❌ DO NOT USE (for running scripts/training)
+- **WSL/WSL2 for training** - Deprecated due to GPU stability issues, hangs, and TDR crashes
 - **`~/wrockey/vmat-diffusion-project`** - Old WSL location, do not use
-- **bash shell** - Use Windows cmd.exe or PowerShell
+- **bash shell for training** - Use Windows cmd.exe or PowerShell
 
-All scripts, training, inference, logging, results, notebooks, and git operations should be done in the **native Windows environment**.
+All scripts, training, inference, and experiments should be run in **native Windows**.
+
+### Note for Claude Code
+Claude Code's terminal runs in WSL, so it accesses the Windows project via `/mnt/c/Users/Bill/vmat-diffusion-project`. This is fine for file operations (read, edit, git). However, when running Python scripts (training, inference), use `cmd.exe /c` to execute in native Windows.
 
 ---
 
