@@ -20,6 +20,35 @@ All logging, results, notebooks, and git commits should be in the Windows direct
 
 ---
 
+## 🚨 QUICK START - CURRENT STATE (2026-01-20)
+
+**TL;DR: DDPM didn't work. Pivot to baseline improvements.**
+
+### Where We Are
+| Model | Val MAE | Target | Status |
+|-------|---------|--------|--------|
+| Baseline U-Net | 3.73 Gy | < 3 Gy | Best so far |
+| DDPM (optimized) | 3.78 Gy | < 3 Gy | Matches baseline, NOT recommended |
+
+### Critical Finding
+**DDPM is NOT the right approach for dose prediction:**
+- "More steps = worse" (structural issue)
+- No benefit over simple baseline
+- Dose prediction is deterministic; diffusion is for multi-modal generation
+
+### What To Do Next
+1. ✅ **Improve baseline** with perceptual/adversarial loss (PRIORITY)
+2. ✅ **Try Flow Matching** if generative approach desired
+3. ✅ **Collect 100 cases** when available
+4. ❌ **Don't continue DDPM work**
+
+### Key Files
+- Results: `experiments/phase1_sampling/`, `experiments/phase1_ensemble/`
+- Analysis: `docs/DDPM_OPTIMIZATION_PLAN.md` (full strategic assessment)
+- Experiments: `notebooks/EXPERIMENTS_INDEX.md`
+
+---
+
 ## Project Overview
 
 This project implements a generative AI model using diffusion techniques to create deliverable **Volumetric Modulated Arc Therapy (VMAT)** plans for radiation therapy (specifically prostate cancer).
