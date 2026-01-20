@@ -45,7 +45,7 @@ Examples:
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
 ### 2. Diffusion Models (DDPM)
-- [ ] ddpm_dose_v1 (**In Progress** - git: cd7dac8)
+- [ ] ddpm_dose_v1 (**In Progress** - git: bdc6939, RAM caching fix)
 - [ ] ddpm_dose_v2_conditioned (Planned)
 
 ### 3. Ablation Studies

@@ -77,17 +77,23 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 
 ### In Progress 🔄
 
-**2026-01-19: DDPM Training (RUNNING)**
-- Training running on local SSD data (`~/vmat-diffusion-project/data/processed_npz/`)
-- Fixed I/O bottleneck by copying data from slow WSL2 Windows mount
-- Git commit for experiment: `cd7dac8`
-- Test cases held out: case_0007, case_0021 (same as baseline)
-- Training command:
+**2026-01-19: DDPM Training (NEEDS RESTART)**
+- Added RAM caching to eliminate I/O bottleneck (commit `bdc6939`)
+- Had WSL2 GPU driver errors (`dxg` ioctl failures) causing stalls
+- **TO RESTART (after WSL shutdown):**
   ```bash
-  python scripts/train_dose_ddpm_v2.py \
+  # 1. From Windows PowerShell: wsl --shutdown
+  # 2. Reopen WSL terminal, then:
+  cd ~/vmat-diffusion-project
+  source ~/miniconda3/etc/profile.d/conda.sh && conda activate vmat-diffusion
+  rm -rf runs/ddpm_dose_v1/*
+  nohup python scripts/train_dose_ddpm_v2.py \
       --data_dir ~/vmat-diffusion-project/data/processed_npz \
-      --epochs 200 --batch_size 2 --exp_name ddpm_dose_v1 --seed 42
+      --epochs 200 --batch_size 2 --exp_name ddpm_dose_v1 --seed 42 \
+      > runs/ddpm_dose_v1/training.log 2>&1 &
   ```
+- Git commit for experiment: `bdc6939` (with RAM caching)
+- Test cases held out: case_0007, case_0021 (same as baseline)
 - Monitor progress:
   ```bash
   tail -50 ~/vmat-diffusion-project/runs/ddpm_dose_v1/training.log
