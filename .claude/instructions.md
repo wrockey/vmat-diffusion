@@ -77,31 +77,34 @@ Frame VMAT planning as a generative task analogous to AI image generation:
 
 ### In Progress 🔄
 
-**2026-01-19: DDPM Training (Running)**
-- Training DDPM model on RTX 3090
-- **Data location:** `./data/processed_npz/` (local SSD copy - NOT Windows mount!)
-- Test cases held out: case_0007, case_0021 (same as baseline)
-- **To monitor:**
-  ```bash
-  # Check metrics
-  cat runs/vmat_dose_ddpm/version_*/metrics.csv | tail -20
-  # Check GPU
-  nvidia-smi
-  # Check watchdog (if running)
-  tail -20 runs/watchdog.log
-  ```
-- **To restart if needed:**
-  ```bash
-  cd ~/vmat-diffusion-project
-  source ~/miniconda3/etc/profile.d/conda.sh && conda activate vmat-diffusion
-  python scripts/train_dose_ddpm_v2.py --data_dir ./processed --epochs 200
-  ```
-- **To run with watchdog (auto-recovery):**
-  ```bash
-  cd ~/vmat-diffusion-project
-  nohup ./scripts/training_watchdog.sh > runs/watchdog_output.log 2>&1 &
-  ```
-- **If hangs occurred:** Check `runs/hang_diagnostics.log` for diagnostic info
+**2026-01-19: DDPM Training - Moving to Native Windows/Pinokio**
+
+WSL2 had persistent issues:
+- Training kept hanging every ~3 minutes (dataloader/GPU communication issues)
+- Watchdog script auto-restarted but hangs continued
+- Attempted native Windows via Pinokio - initial run crashed with **dxgkrnl 0x113 (TDR) error**
+
+**Current approach:** Retry on native Windows with **safe training mode** (reduced GPU load).
+
+**Windows Project Location:** `C:\Users\Bill\vmat-diffusion-project`
+
+**To start safe training (from Windows cmd):**
+```cmd
+cd C:\Users\Bill\vmat-diffusion-project
+start_training_safe.bat
+```
+
+**Safe mode settings:**
+- Batch size: 1 (reduced from 2)
+- Base channels: 32 (reduced from 48)
+- GPU cooling enabled (0.5s pause every 10 batches)
+- Data: `I:\processed_npz`
+
+**Monitor GPU temps** with GPU-Z - target < 80°C.
+
+**Previous WSL attempts archived in:**
+- `runs/vmat_dose_ddpm_wsl_hangs/` - WSL runs with repeated hangs
+- `runs/vmat_dose_ddpm_pinokio_crashed/` - Pinokio run that crashed with 0x113
 
 ### Next Steps 📋
 
@@ -216,24 +219,45 @@ Before starting work, review:
 
 ## Data Locations
 
+### Native Windows (Pinokio) - PREFERRED
+| Data | Location |
+|------|----------|
+| Project | `C:\Users\Bill\vmat-diffusion-project` |
+| Processed NPZ | `I:\processed_npz` |
+| Training runs | `C:\Users\Bill\vmat-diffusion-project\runs` |
+
+### WSL2 (Legacy - stability issues)
 | Data | Primary Location | Fallback |
 |------|------------------|----------|
 | Raw DICOM | `/mnt/i/anonymized_dicom/` | `./data/raw/` |
-| Processed NPZ (for training) | `./data/processed_npz/` (local SSD) | `/mnt/i/processed_npz/` |
+| Processed NPZ | `./data/processed_npz/` (local SSD) | `/mnt/i/processed_npz/` |
 | Training runs | `./runs/` | - |
 | Predictions | `./predictions/` | - |
 
-**IMPORTANT (WSL Performance):**
-- **Always train from local SSD** (`./data/processed_npz/`), NOT from Windows mounts (`/mnt/`)
-- Windows mounts are slow (9p filesystem) and cause I/O bottlenecks during training
+**IMPORTANT:**
+- **Native Windows is now preferred** due to WSL2 stability issues (hangs, TDR errors)
+- If using WSL2: Always train from local SSD, NOT Windows mounts (`/mnt/`)
 - The symlink `./processed` should point to `./data/processed_npz/` (local)
-- Copy data to local if needed: `cp -r /mnt/i/processed_npz ./data/`
 
 Scripts auto-detect paths (check local first, then external drive).
 
 ---
 
 ## Environment
+
+### Native Windows (Pinokio) - PREFERRED
+
+```cmd
+:: Activate the vmat-win environment
+call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
+
+:: Environment was created with:
+:: conda create -n vmat-win python=3.10
+:: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+:: pip install pytorch-lightning numpy scipy tensorboard rich pymedphys
+```
+
+### WSL2 (Legacy)
 
 ```bash
 # Recreate environment from scratch
@@ -245,14 +269,16 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 ```
 
-**Current environment:**
-- Python: 3.12.12
-- PyTorch: 2.4.1
-- CUDA: 12.4
-- GPU: NVIDIA GeForce RTX 3090 (24 GB)
+**Current environments:**
+| Platform | Env Name | Python | PyTorch | CUDA |
+|----------|----------|--------|---------|------|
+| Windows (Pinokio) | vmat-win | 3.10 | 2.x | 12.1 |
+| WSL2 | vmat-diffusion | 3.12 | 2.4.1 | 12.4 |
+
+**Hardware:** NVIDIA GeForce RTX 3090 (24 GB)
 
 **Key files:**
-- `environment.yml` - Full conda environment export
+- `environment.yml` - Full conda environment export (WSL)
 - `requirements.txt` - Minimal pip dependencies
 
 ---
@@ -367,6 +393,25 @@ When you receive new cases (100+, 750+):
 | WSL crashes / GPU errors | RAM caching + WSL memory pressure | Don't cache data in RAM; use disk loading |
 | Slow I/O, bursty GPU util | Data on Windows mount (`/mnt/`) | Copy data to WSL filesystem (`~/` or `./data/`) |
 | CUDA driver errors | WSL2 GPU passthrough issues | Run `wsl --shutdown` from PowerShell, restart |
+| **0x113 TDR / dxgkrnl crash** | GPU overheating or driver timeout | Use native Windows with `--gpu_cooling` |
+| **Windows unresponsive** | GPU at 100% sustained | Enable `--gpu_cooling`, reduce batch_size |
+| **Repeated WSL hangs** | WSL2/CUDA bridge issues | Switch to native Windows/Pinokio |
+
+### GPU Stability Options (for native Windows)
+
+The training script supports GPU cooling pauses to prevent thermal throttling and TDR crashes:
+
+```cmd
+python scripts\train_dose_ddpm_v2.py ^
+    --data_dir I:\processed_npz ^
+    --gpu_cooling ^
+    --cooling_interval 10 ^
+    --cooling_pause 0.5 ^
+    --batch_size 1 ^
+    --base_channels 32
+```
+
+Or use the pre-configured safe mode: `start_training_safe.bat`
 
 ### Training Watchdog (Auto-Recovery)
 
@@ -432,6 +477,21 @@ pkill -f training_watchdog.sh
 
 ## Key Commands
 
+### Native Windows (Pinokio) - PREFERRED
+
+```cmd
+:: From C:\Users\Bill\vmat-diffusion-project
+
+:: Train DDPM (safe mode - recommended)
+start_training_safe.bat
+
+:: Train DDPM (manual)
+call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
+python scripts\train_dose_ddpm_v2.py --data_dir I:\processed_npz --epochs 200 --gpu_cooling
+```
+
+### WSL2 (Legacy)
+
 ```bash
 # Preprocessing (all cases)
 python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
@@ -440,7 +500,7 @@ python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
 python scripts/train_baseline_unet.py --data_dir /mnt/i/processed_npz --epochs 200
 
 # Train DDPM
-python scripts/train_dose_ddpm_v2.py --data_dir /mnt/i/processed_npz --epochs 200
+python scripts/train_dose_ddpm_v2.py --data_dir ./processed --epochs 200
 
 # Run inference
 python scripts/inference_baseline_unet.py --checkpoint <path> --input_dir <dir>
@@ -461,4 +521,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-19 (Added training watchdog script for hang detection and auto-recovery)*
+*Last updated: 2026-01-19 (Moving to native Windows/Pinokio due to WSL2 stability issues; added GPU cooling options)*
