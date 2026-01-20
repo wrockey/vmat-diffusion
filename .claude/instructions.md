@@ -134,8 +134,7 @@ Summary of phases:
 
 **Immediate next action:** Run Phase 1 experiments using existing checkpoint (inference only, ~1 hour)
 
-Also needed:
-- Install numba: `pip install pymedphys[tests]` for gamma metrics
+**Environment note:** numba/pymedphys[tests] is now installed - gamma metrics should work.
 
 ### Future Work 📝
 
@@ -149,11 +148,20 @@ Also needed:
 
 ## Key Documentation (READ THESE FIRST)
 
-Before starting work, review:
-1. `docs/DDPM_OPTIMIZATION_PLAN.md` - **Current focus:** systematic plan to improve DDPM
-2. `docs/SCIENTIFIC_BEST_PRACTICES.md` - Reproducibility and publication guidelines
-3. `notebooks/EXPERIMENTS_INDEX.md` - Experiment tracking and naming conventions
-4. `notebooks/TEMPLATE_experiment.ipynb` - Template for new experiments
+Before starting work, review these in order:
+
+1. **`notebooks/EXPERIMENTS_INDEX.md`** - MASTER experiment list (single source of truth)
+2. **`docs/DDPM_OPTIMIZATION_PLAN.md`** - Current focus: systematic plan to improve DDPM
+3. **`docs/EXPERIMENT_STRUCTURE.md`** - How to organize experiments, notebooks, outputs
+4. **`docs/SCIENTIFIC_BEST_PRACTICES.md`** - Reproducibility and publication guidelines
+5. **`notebooks/TEMPLATE_experiment.ipynb`** - Template for new experiments
+
+**Documentation hierarchy:**
+```
+notebooks/EXPERIMENTS_INDEX.md   → What experiments exist (MASTER LIST)
+docs/EXPERIMENT_STRUCTURE.md     → How to organize new experiments
+docs/DDPM_OPTIMIZATION_PLAN.md   → Current optimization work plan
+```
 
 ---
 
