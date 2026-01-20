@@ -118,19 +118,36 @@ These experiments use the existing checkpoint and only modify inference.
 2. `git add -A && git commit -m "Pre-experiment: <name>"`
 3. Record commit hash
 4. Create notebook from template
+5. Update `docs/EXPERIMENT_LOG.md` "Latest Status" section
 
 ### During Each Experiment:
 1. Log all hyperparameters
 2. Save training curves
 3. Save checkpoints
 4. Monitor GPU temps (target < 80°C)
+5. Use TodoWrite to show visible progress
 
 ### After Each Experiment:
-1. Update EXPERIMENTS_INDEX.md
-2. Save figures (300 DPI, PNG + PDF)
-3. Write conclusions in notebook
-4. `git commit -m "Results: <name> - <key finding>"`
-5. Update this plan with results
+1. Update `docs/EXPERIMENT_LOG.md` with results (append to Running Notes)
+2. Update Results Tracking table in this file
+3. Update EXPERIMENTS_INDEX.md
+4. Save figures (300 DPI, PNG + PDF) to `experiments/<phase>/figures/`
+5. Write conclusions in notebook
+6. `git commit -m "Results: <name> - <key finding>"`
+
+### Output Directories:
+```
+experiments/
+├── phase1_sampling/     # Exp 1.1: sampling steps ablation
+├── phase1_ensemble/     # Exp 1.2: ensemble averaging
+├── phase2_schedules/    # Exp 2.1: schedule comparison
+└── phase2_loss/         # Exp 2.2: hybrid loss
+```
+
+Each directory should contain:
+- `results.json` - structured metrics
+- `figures/` - plots
+- `predictions/` - sample outputs (optional)
 
 ---
 
