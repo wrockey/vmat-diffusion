@@ -24,7 +24,7 @@ cd C:\Users\Bill\vmat-diffusion-project
 
 ### ❌ DO NOT USE (for running scripts/training)
 - **WSL/WSL2 for training** - Deprecated due to GPU stability issues, hangs, and TDR crashes
-- **`~/wrockey/vmat-diffusion-project`** - Old WSL location, do not use
+- **`/home/wrockey/vmat-diffusion-project`** - DELETED (renamed to `-DEPRECATED`, will be removed)
 - **bash shell for training** - Use Windows cmd.exe or PowerShell
 
 All scripts, training, inference, and experiments should be run in **native Windows**.
