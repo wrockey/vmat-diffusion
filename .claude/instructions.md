@@ -376,6 +376,77 @@ docs/DDPM_OPTIMIZATION_PLAN.md   → Current optimization work plan
    git commit -m "Results: <experiment_name> - <key metrics>"
    ```
 
+### Post-Experiment Documentation Workflow (REQUIRED)
+
+**After training completes and results are available, Claude MUST:**
+
+1. **Create figure generation script** (`scripts/generate_<exp_name>_figures.py`):
+   - Use existing scripts as templates:
+     - `scripts/generate_grad_loss_figures.py` (4 figures: training curves, comparison, dose slices, loss components)
+     - `scripts/generate_ddpm_figures.py` (5 figures: training, ablation, ensemble, comparison, key finding)
+   - Follow publication-quality standards:
+     ```python
+     plt.rcParams.update({
+         'font.family': 'serif',
+         'font.size': 12,
+         'figure.dpi': 150,
+         'savefig.dpi': 300,
+         'savefig.bbox': 'tight',
+     })
+     ```
+   - Save figures to `runs/<exp_name>/figures/` as both PNG (300 DPI) and PDF
+   - Use colorblind-friendly colors (see existing scripts for palette)
+
+2. **Generate figures** by running the script:
+   ```cmd
+   python scripts\generate_<exp_name>_figures.py
+   ```
+
+3. **Create experiment notebook** (`notebooks/YYYY-MM-DD_<exp_name>.ipynb`):
+   - Copy structure from `notebooks/TEMPLATE_experiment.ipynb`
+   - Reference existing notebooks for format:
+     - `notebooks/2026-01-20_grad_loss_experiment.ipynb`
+     - `notebooks/2026-01-20_ddpm_optimization.ipynb`
+   - Required sections:
+     1. Overview (objective, hypothesis, key results, conclusion)
+     2. Reproducibility Information (git commit, versions, command to reproduce)
+     3. Dataset Information
+     4. Model/Method Configuration
+     5. Training Configuration
+     6. Results with embedded figures (use relative paths: `../runs/<exp>/figures/`)
+     7. Analysis (observations, comparison to baseline, limitations)
+     8. Conclusions and Recommendations
+     9. Next Steps
+     10. Artifacts table (paths to checkpoints, configs, predictions, figures)
+
+4. **Update EXPERIMENTS_INDEX.md**:
+   - Add/update row in Experiment Log table
+   - Link to the new notebook
+   - Record git commit, best metrics, status
+
+5. **Commit and push all documentation**:
+   ```bash
+   git add scripts/generate_<exp_name>_figures.py
+   git add notebooks/YYYY-MM-DD_<exp_name>.ipynb
+   git add notebooks/EXPERIMENTS_INDEX.md
+   git commit -m "docs: Add <exp_name> notebook and figures"
+   git push
+   ```
+
+**Folder structure for experiment outputs:**
+```
+runs/<exp_name>/
+├── checkpoints/          # Model checkpoints
+├── figures/              # Publication-ready figures (PNG + PDF)
+├── version_*/            # PyTorch Lightning logs
+├── training_config.json  # Hyperparameters
+├── training_summary.json # Final metrics
+└── metrics.csv           # Per-epoch metrics
+
+predictions/<exp_name>_test/
+└── case_XXXX_pred.npz    # Test set predictions
+```
+
 ### Template Location:
 - `notebooks/TEMPLATE_experiment.ipynb` - Copy and customize for each experiment
 - `notebooks/EXPERIMENTS_INDEX.md` - Central experiment tracking
@@ -829,4 +900,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (grad_loss_0.1 COMPLETE - Gamma improved 14.2% → 27.9%, recommend Phase B)*
+*Last updated: 2026-01-21 (Added post-experiment documentation workflow; ready for Phase B)*
