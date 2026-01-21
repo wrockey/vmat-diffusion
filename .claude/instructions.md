@@ -276,36 +276,85 @@ python scripts\train_baseline_unet.py --exp_name grad_vgg_combined ^
 
 Success criteria:
 - MAE: maintain < 2.0 Gy (current: 1.44 Gy ✅)
-- Gamma (3%/3mm): improve from 14.2% toward 50%+
+- Gamma (3%/3mm): **TARGET 95%** (clinical requirement)
 - Training time: < 4 hours
 - GPU memory: < 20 GB
 
-**Recommended Path Forward:**
-1. ✅ **Improve baseline** with perceptual/adversarial loss (highest priority)
-2. ✅ **Try Flow Matching** if generative approach desired
-3. ✅ **Collect 100 cases** - helps any approach
-4. ❌ **Don't continue DDPM tuning** - structural issues won't be fixed
-
-**Immediate actions:**
-1. Update inference code to use 50 DDIM steps as default
-2. Run test set evaluation with optimal DDPM parameters (for completeness)
-3. ✅ ~~Implement perceptual loss for baseline U-Net~~ (DONE - see experiments above)
-4. Research Flow Matching implementation
-
 **Environment note:** numba/pymedphys[tests] is now installed - gamma metrics should work.
 
-### Future Work 📝
+### Path Forward: Decision Tree 🎯
 
-**Priority (do first):**
-- Baseline improvements (perceptual/adversarial loss)
-- Flow Matching comparison
-- Collect 100+ cases
+**PRIMARY GOAL: Achieve 95% Gamma (3%/3mm) pass rate for clinical deployment.**
 
-**Lower priority:**
-- Ablation studies (no SDF, no constraints) - may still be useful for baseline
-- Architecture upgrades (nnU-Net, Swin-UNETR)
-- MLC sequence prediction (Phase 2 of project)
-- Clinical validation
+Current status: 27.9% Gamma (Phase A gradient loss)
+
+```
+Phase B: grad_vgg_combined
+│
+├── IF Gamma ≥ 50%: Major progress!
+│   ├── Run grad_loss_sweep (tune weights: 0.05, 0.1, 0.2)
+│   ├── Run vgg_loss_sweep (tune weights: 0.0005, 0.001, 0.002)
+│   └── Continue to Phase C (adversarial loss)
+│
+├── IF Gamma 35-50%: Moderate improvement
+│   ├── Run grad_loss_sweep to optimize
+│   ├── Try adversarial loss (PatchGAN discriminator)
+│   └── Consider architecture upgrades
+│
+└── IF Gamma ≈ 28% (no improvement): VGG not helping
+    ├── Skip VGG, revert to gradient-only
+    ├── Try adversarial loss directly
+    └── Consider Flow Matching as alternative approach
+```
+
+### Experiment Priority Queue (After Phase B)
+
+**Tier 1 - Loss Function Improvements (highest impact expected):**
+1. `grad_vgg_combined` ← Phase B (CURRENT)
+2. `grad_loss_sweep` - Tune gradient weight (0.05, 0.1, 0.2)
+3. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
+4. `combined_all` - Gradient + VGG + Adversarial (if individual losses help)
+
+**Tier 2 - Architecture Improvements:**
+5. `attention_unet` - Add attention gates to U-Net
+6. `deeper_unet` - Increase model capacity (64 or 96 base channels)
+7. `nnunet_baseline` - Try nnU-Net architecture
+8. `swin_unetr` - Transformer-based architecture
+
+**Tier 3 - Data & Training Improvements:**
+9. `collect_100_cases` - More training data (currently 23 cases)
+10. `augmentation_sweep` - More aggressive data augmentation
+11. `full_3d_gamma` - Compute proper 3D Gamma (not just central slice)
+
+**Tier 4 - Alternative Approaches:**
+12. `flow_matching_v1` - Simpler than diffusion, may work better
+13. `ensemble_models` - Combine multiple models
+
+### Gamma Milestones
+
+| Milestone | Gamma | Status | Implication |
+|-----------|-------|--------|-------------|
+| Baseline | 14.2% | ✅ Done | Starting point |
+| Phase A | 27.9% | ✅ Done | Gradient loss helps |
+| Interim | 50% | Target | Publishable proof-of-concept |
+| Strong | 80% | Target | Competitive with literature |
+| **Clinical** | **95%** | **GOAL** | **Clinical deployment ready** |
+
+### What 95% Gamma Requires
+
+To reach clinical-grade 95% Gamma, we likely need MULTIPLE improvements:
+1. **Better loss functions** - Gradient + VGG + Adversarial
+2. **More data** - 100+ cases (currently 23)
+3. **Architecture upgrades** - Attention, deeper networks, or transformers
+4. **Full 3D evaluation** - Current Gamma is central slice only
+5. **Possibly:** Ensemble of models, test-time augmentation
+
+**Reality check:** Literature reports 85-95% Gamma for similar tasks, but often with:
+- Larger datasets (100-500 cases)
+- Site-specific models (prostate-only vs multi-site)
+- Relaxed criteria (5%/5mm instead of 3%/3mm)
+
+❌ **Don't continue DDPM tuning** - structural issues won't be fixed
 
 ---
 
@@ -900,4 +949,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-21 (Added post-experiment documentation workflow; ready for Phase B)*
+*Last updated: 2026-01-21 (Added decision tree and experiment priority queue; 95% Gamma is the goal)*
