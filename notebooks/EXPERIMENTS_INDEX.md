@@ -17,6 +17,7 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-20 | phase1_ensemble | `206f84c` | [2026-01-20_ddpm_optimization.ipynb](2026-01-20_ddpm_optimization.ipynb) | DDPM inference | **3.78 Gy MAE** (n=1) | ✅ Complete |
 | 2026-01-20 | strategic_assessment | `206f84c` | [2026-01-20_strategic_assessment.ipynb](2026-01-20_strategic_assessment.ipynb) | Analysis | - | Complete |
 | 2026-01-20 | grad_loss_0.1 | `5d111a0` | [2026-01-20_grad_loss_experiment.ipynb](2026-01-20_grad_loss_experiment.ipynb) | BaselineUNet3D+GradLoss | **3.67 Gy MAE (val), 1.44 Gy MAE, 27.9% Gamma (test)** | ✅ Complete |
+| 2026-01-21 | grad_vgg_combined | `dca8446` | [2026-01-21_grad_vgg_combined.ipynb](2026-01-21_grad_vgg_combined.ipynb) | BaselineUNet3D+Grad+VGG | **2.27 Gy MAE (val), 1.44 Gy MAE, ~28% Gamma (test)** | ✅ Complete |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
@@ -68,10 +69,36 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 
 **Recommendation:** Proceed with Phase B (gradient + VGG combined) to push Gamma higher.
 
+### Gradient + VGG Combined Experiment Results (2026-01-21) ← NEW
+
+**Key Finding: VGG improves MAE but NOT Gamma!**
+
+| Metric | Baseline | Grad Loss | Grad+VGG | Change (Grad→Grad+VGG) |
+|--------|----------|-----------|----------|------------------------|
+| Val MAE | 3.73 Gy | 3.67 Gy | **2.27 Gy** | **-38%** ✅ |
+| Test MAE | 1.43 Gy | 1.44 Gy | **1.44 Gy** | 0% |
+| Gamma (3%/3mm) | 14.2% | 27.9% | **~28%** | **0%** ❌ |
+| Training Time | 2.55h | 1.85h | **9.74h** | +5x |
+
+**Analysis:**
+- VGG perceptual loss significantly improves validation MAE (2.27 vs 3.67 Gy, -38%)
+- BUT: Gamma pass rate unchanged (~28%), indicating VGG doesn't help spatial accuracy
+- VGG features (ImageNet-derived) optimize for semantic similarity, not dose gradients
+- Training time increased 5x due to VGG feature extraction overhead
+
+**Conclusion: Skip VGG in future experiments. VGG helps global accuracy but not Gamma.**
+
+**Next steps per decision tree:**
+1. Try adversarial loss (PatchGAN) for edge sharpness
+2. Try structure-weighted loss for PTV/OAR accuracy
+3. Try DVH-aware loss for clinical metrics
+4. Consider data augmentation to address n=23 limitation
+
 ### Notebooks Needing Creation
 - [x] `2026-01-20_ddpm_optimization.ipynb` - Document DDPM training + Phase 1 optimization ✅
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
 - [x] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results ✅
+- [x] `2026-01-21_grad_vgg_combined.ipynb` - Document Grad+VGG experiment results ✅
 
 ---
 
@@ -109,7 +136,9 @@ Examples:
 
 **🎯 GOAL: Achieve 95% Gamma (3%/3mm) for clinical deployment.**
 
-Current: 27.9% Gamma (Phase A) → Target: 95% Gamma
+Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
+
+**Key insight (Phase B):** VGG perceptual loss does NOT improve Gamma. Need adversarial or structure-weighted losses.
 
 #### Phase A: Gradient Loss ✅ COMPLETE
 - [x] ~~grad_loss_0.1~~ ✅ **COMPLETE** (gradient loss only, weight=0.1)
@@ -119,11 +148,13 @@ Current: 27.9% Gamma (Phase A) → Target: 95% Gamma
   - Best checkpoint: `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
   - **Conclusion: Gradient loss significantly improves Gamma pass rate while maintaining MAE** ✅
 
-#### Phase B: Combined Perceptual Losses ← CURRENT
-- [ ] **grad_vgg_combined** 🔄 **NEXT UP** (gradient + VGG perceptual loss)
+#### Phase B: Combined Perceptual Losses ✅ COMPLETE
+- [x] ~~grad_vgg_combined~~ ✅ **COMPLETE** (gradient + VGG perceptual loss)
   - Command: `python scripts\train_baseline_unet.py --exp_name grad_vgg_combined --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100`
-  - Expected: Gamma +10-20% over gradient-only (target: 40-50%)
-  - Decision tree after results - see `.claude/instructions.md`
+  - **Results:** Val MAE **2.27 Gy** (epoch 32), Test MAE 1.44 Gy, **Gamma ~28%** (unchanged from Phase A!)
+  - Training: 9.74 hours, early stopped at epoch 82
+  - Best checkpoint: `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
+  - **Conclusion: VGG improves MAE but NOT Gamma. Skip VGG in future experiments.** ❌
 
 #### Phase C: Loss Tuning & Clinical Losses
 - [ ] grad_loss_sweep (tune gradient_loss_weight: 0.05, 0.1, 0.2)
@@ -248,4 +279,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-21 (Added structure-weighted, DVH-aware, augmentation experiments; reorganized priority tiers for 95% Gamma goal)*
+*Last updated: 2026-01-21 (Phase B complete - VGG doesn't help Gamma; added results and notebook)*

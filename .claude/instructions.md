@@ -76,32 +76,39 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 ---
 
-## 🚨 QUICK START - CURRENT STATE (2026-01-20)
+## 🚨 QUICK START - CURRENT STATE (2026-01-21)
 
-**TL;DR: Gradient loss improves Gamma pass rate significantly! Continue with Phase B (VGG loss).**
+**TL;DR: Phase B (Grad+VGG) complete. VGG improves MAE but NOT Gamma. Need adversarial or structure-weighted losses.**
 
 ### Where We Are
 | Model | Val MAE | Test MAE | Gamma (3%/3mm) | Status |
 |-------|---------|----------|----------------|--------|
 | Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | Original baseline |
 | DDPM (optimized) | 3.78 Gy | - | - | NOT recommended |
-| **Gradient Loss 0.1** | **3.67 Gy** | **1.44 Gy** | **27.9%** | ✅ **Current best** |
+| Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | Phase A ✅ |
+| **Grad+VGG** | **2.27 Gy** | **1.44 Gy** | **~28%** | Phase B ✅ |
 
-### Key Finding
-**Gradient loss (3D Sobel) nearly doubled Gamma pass rate!**
-- 14.2% → 27.9% Gamma improvement (+13.7%)
-- MAE maintained (1.43 → 1.44 Gy)
-- Training time reduced (2.55h → 1.85h)
+### Key Finding (Phase B)
+**VGG perceptual loss improves MAE but does NOT improve Gamma!**
+- Val MAE: 3.67 → 2.27 Gy (-38% improvement) ✅
+- Test MAE: unchanged (1.44 Gy)
+- Gamma: unchanged (~28%) ❌
+- Training time: 9.74h (5x slower due to VGG)
+
+**Conclusion:** Skip VGG in future experiments. VGG helps global accuracy but not spatial accuracy (Gamma).
 
 ### What To Do Next
-1. ✅ **Run Phase B:** Gradient + VGG combined loss (RECOMMENDED)
-2. ✅ **Collect 100 cases** when available
-3. Consider gradient weight tuning (0.05, 0.1, 0.2)
-4. ❌ **Don't continue DDPM work**
+1. ✅ **Try adversarial loss (PatchGAN)** - For edge sharpness
+2. ✅ **Try structure-weighted loss** - Weight PTV regions 2x
+3. ✅ **Try DVH-aware loss** - Penalize D95 underdosing
+4. ✅ **Data augmentation** - Critical with n=23
+5. ❌ **Don't use VGG** - Doesn't help Gamma
+6. ❌ **Don't continue DDPM work**
 
 ### Key Files
-- **Best model:** `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
-- Predictions: `predictions/grad_loss_0.1_test/`
+- **Best model (MAE):** `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
+- **Best model (Gamma):** `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
+- Predictions: `predictions/grad_vgg_combined_test/`
 - Experiments: `notebooks/EXPERIMENTS_INDEX.md`
 
 ---
