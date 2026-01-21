@@ -16,7 +16,7 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-20 | phase1_sampling | TBD | - | DDPM inference | **3.80 Gy MAE** (50 steps) | Complete |
 | 2026-01-20 | phase1_ensemble | TBD | - | DDPM inference | **3.78 Gy MAE** (n=1) | Complete |
 | 2026-01-20 | strategic_assessment | `206f84c` | [2026-01-20_strategic_assessment.ipynb](2026-01-20_strategic_assessment.ipynb) | Analysis | - | Complete |
-| 2026-01-20 | grad_loss_0.1 | `5d111a0` | **⚠️ NEEDS CREATION** | BaselineUNet3D+GradLoss | TBD | **In Progress** |
+| 2026-01-20 | grad_loss_0.1 | `5d111a0` | [2026-01-20_grad_loss_experiment.ipynb](2026-01-20_grad_loss_experiment.ipynb) | BaselineUNet3D+GradLoss | **3.67 Gy MAE (val), 1.44 Gy MAE, 27.9% Gamma (test)** | ✅ Complete |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
@@ -51,11 +51,28 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 
 See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 
+### Gradient Loss Experiment Results (2026-01-20)
+
+**Key Finding: Gradient loss significantly improves Gamma pass rate!**
+
+| Metric | Baseline | Gradient Loss | Change |
+|--------|----------|---------------|--------|
+| Val MAE | 3.73 Gy | **3.67 Gy** | -0.06 Gy ✅ |
+| Test MAE | 1.43 Gy | **1.44 Gy** | +0.01 Gy (same) |
+| Gamma (3%/3mm) | 14.2% | **27.9%** | **+13.7%** 🎯 |
+
+**Analysis:**
+- Gradient loss (3D Sobel) nearly doubled Gamma pass rate while maintaining MAE
+- Best checkpoint at epoch 12 (same as baseline - consistent convergence)
+- Training time 1.85 hours (baseline was 2.55 hours)
+
+**Recommendation:** Proceed with Phase B (gradient + VGG combined) to push Gamma higher.
+
 ### Notebooks Needing Creation
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 - [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
-- [ ] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment (create after training completes)
+- [ ] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results
 
 ---
 
@@ -93,9 +110,12 @@ Examples:
 
 Goal: Improve Gamma pass rate from 14.2% toward 50%+ by adding gradient-based losses.
 
-- [🔄] grad_loss_0.1 (**IN PROGRESS** - gradient loss only, weight=0.1)
+- [x] ~~grad_loss_0.1~~ ✅ **COMPLETE** (gradient loss only, weight=0.1)
   - Command: `python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100`
-  - Expected: Improved edge preservation, better Gamma
+  - **Results:** Val MAE 3.67 Gy (epoch 12), Test MAE 1.44 Gy, **Gamma 27.9%** (nearly doubled from 14.2%!)
+  - Training: 1.85 hours, early stopped at epoch 62
+  - Best checkpoint: `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
+  - **Conclusion: Gradient loss significantly improves Gamma pass rate while maintaining MAE** ✅
 - [ ] grad_vgg_combined (Planned - gradient + VGG perceptual loss)
   - Command: `python scripts\train_baseline_unet.py --exp_name grad_vgg_combined --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100`
   - Run after grad_loss_0.1 if gradient loss helps
@@ -177,4 +197,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (grad_loss_0.1 experiment started - git 5d111a0)*
+*Last updated: 2026-01-20 (grad_loss_0.1 experiment COMPLETE - Gamma improved from 14.2% to 27.9%!)*

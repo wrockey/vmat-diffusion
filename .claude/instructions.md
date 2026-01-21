@@ -78,29 +78,30 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 ## 🚨 QUICK START - CURRENT STATE (2026-01-20)
 
-**TL;DR: DDPM didn't work. Pivot to baseline improvements.**
+**TL;DR: Gradient loss improves Gamma pass rate significantly! Continue with Phase B (VGG loss).**
 
 ### Where We Are
-| Model | Val MAE | Target | Status |
-|-------|---------|--------|--------|
-| Baseline U-Net | 3.73 Gy | < 3 Gy | Best so far |
-| DDPM (optimized) | 3.78 Gy | < 3 Gy | Matches baseline, NOT recommended |
+| Model | Val MAE | Test MAE | Gamma (3%/3mm) | Status |
+|-------|---------|----------|----------------|--------|
+| Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | Original baseline |
+| DDPM (optimized) | 3.78 Gy | - | - | NOT recommended |
+| **Gradient Loss 0.1** | **3.67 Gy** | **1.44 Gy** | **27.9%** | ✅ **Current best** |
 
-### Critical Finding
-**DDPM is NOT the right approach for dose prediction:**
-- "More steps = worse" (structural issue)
-- No benefit over simple baseline
-- Dose prediction is deterministic; diffusion is for multi-modal generation
+### Key Finding
+**Gradient loss (3D Sobel) nearly doubled Gamma pass rate!**
+- 14.2% → 27.9% Gamma improvement (+13.7%)
+- MAE maintained (1.43 → 1.44 Gy)
+- Training time reduced (2.55h → 1.85h)
 
 ### What To Do Next
-1. ✅ **Improve baseline** with perceptual/adversarial loss (PRIORITY)
-2. ✅ **Try Flow Matching** if generative approach desired
-3. ✅ **Collect 100 cases** when available
+1. ✅ **Run Phase B:** Gradient + VGG combined loss (RECOMMENDED)
+2. ✅ **Collect 100 cases** when available
+3. Consider gradient weight tuning (0.05, 0.1, 0.2)
 4. ❌ **Don't continue DDPM work**
 
 ### Key Files
-- Results: `experiments/phase1_sampling/`, `experiments/phase1_ensemble/`
-- Analysis: `docs/DDPM_OPTIMIZATION_PLAN.md` (full strategic assessment)
+- **Best model:** `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
+- Predictions: `predictions/grad_loss_0.1_test/`
 - Experiments: `notebooks/EXPERIMENTS_INDEX.md`
 
 ---
@@ -234,12 +235,21 @@ After Phase 1 analysis, **DDPM is not the right approach for dose prediction:**
 
 ### In Progress 🔄
 
-**2026-01-20: Gradient Loss Experiment (grad_loss_0.1) - TRAINING**
+*(No experiments currently running)*
+
+### Completed ✅ (Recent)
+
+**2026-01-20: Gradient Loss Experiment (grad_loss_0.1) - COMPLETE** 🎉
 - Git hash: `5d111a0`
 - Run directory: `runs/grad_loss_0.1/`
 - Config: BaselineUNet3D + GradientLoss3D (weight=0.1), 100 epochs
-- Goal: Improve Gamma pass rate from 14.2% toward 50%+ target
-- Status: Training started via Claude Code WSL→Windows passthrough
+- **Results:**
+  - Val MAE: 3.67 Gy (epoch 12) - slightly better than baseline (3.73 Gy)
+  - Test MAE: 1.44 ± 0.33 Gy - same as baseline (1.43 Gy)
+  - **Gamma (3%/3mm): 27.9%** - nearly doubled from baseline (14.2%)!
+- Training time: 1.85 hours, early stopped at epoch 62
+- Best checkpoint: `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
+- **Conclusion: Gradient loss significantly improves Gamma while maintaining MAE**
 
 **2026-01-20: Perceptual Loss Implementation for Baseline U-Net** ✅
 - Added `GradientLoss3D` class (3D Sobel gradient loss for edge preservation)
@@ -248,21 +258,16 @@ After Phase 1 analysis, **DDPM is not the right approach for dose prediction:**
 
 ### Next Steps 📋
 
-**DDPM optimization complete. Pivot to alternative approaches.**
+**Phase A Complete! Gradient loss works. Proceed to Phase B.**
 
-**Immediate: Perceptual Loss Ablation Experiments**
+**Immediate: Phase B - Combined Gradient + VGG Loss**
 
-Run in Windows cmd.exe after activating vmat-win:
+Run in Windows cmd.exe (or via Claude Code passthrough):
 ```cmd
 call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
 cd C:\Users\Bill\vmat-diffusion-project
 
-:: Phase A: Gradient Loss Only (run first)
-python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 ^
-    --data_dir I:\processed_npz ^
-    --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100
-
-:: Phase B: Add VGG if gradient helps
+:: Phase B: Gradient + VGG combined (RECOMMENDED NEXT)
 python scripts\train_baseline_unet.py --exp_name grad_vgg_combined ^
     --data_dir I:\processed_npz ^
     --use_gradient_loss --gradient_loss_weight 0.1 ^
@@ -270,7 +275,7 @@ python scripts\train_baseline_unet.py --exp_name grad_vgg_combined ^
 ```
 
 Success criteria:
-- MAE: maintain < 2.0 Gy (don't sacrifice much from 1.43 Gy baseline)
+- MAE: maintain < 2.0 Gy (current: 1.44 Gy ✅)
 - Gamma (3%/3mm): improve from 14.2% toward 50%+
 - Training time: < 4 hours
 - GPU memory: < 20 GB
@@ -824,4 +829,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (grad_loss_0.1 experiment started - git 5d111a0)*
+*Last updated: 2026-01-20 (grad_loss_0.1 COMPLETE - Gamma improved 14.2% → 27.9%, recommend Phase B)*
