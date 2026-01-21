@@ -72,7 +72,7 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 - [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
-- [ ] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results
+- [x] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results ✅
 
 ---
 
