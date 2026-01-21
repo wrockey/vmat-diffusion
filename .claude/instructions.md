@@ -32,6 +32,48 @@ All scripts, training, inference, and experiments should be run in **native Wind
 ### Note for Claude Code
 Claude Code's terminal runs in WSL, so it accesses the Windows project via `/mnt/c/Users/Bill/vmat-diffusion-project`. This is fine for file operations (read, edit, git). However, when running Python scripts (training, inference), use `cmd.exe /c` to execute in native Windows.
 
+### Claude Code: Running Windows Commands via Passthrough
+
+Claude Code can execute native Windows commands from WSL using `cmd.exe /c`. This allows running training scripts with proper GPU access.
+
+**Basic passthrough syntax:**
+```bash
+cmd.exe /c "windows command here"
+```
+
+**Activate conda and run a command:**
+```bash
+cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && python --version"
+```
+
+**Run training script:**
+```bash
+cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && cd C:\Users\Bill\vmat-diffusion-project && python scripts\train_baseline_unet.py --exp_name test --data_dir I:\processed_npz --epochs 10"
+```
+
+**Handling complex Python commands (quoting issues):**
+
+Nested quotes get mangled between bash and cmd.exe. For complex Python one-liners, use a temp file:
+```bash
+# Write Python code to temp file
+echo "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')" > /tmp/check.py
+
+# Run via Windows Python using WSL path translation
+cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && python \\\\wsl$\\Ubuntu\\tmp\\check.py"
+```
+
+**Key points:**
+- Use `&&` to chain commands (activate → cd → python)
+- Use `call` before `.bat` scripts
+- Windows paths use backslashes: `C:\Users\Bill\...`
+- Data on `I:\` drive is accessible from Windows
+- For long training runs, consider running in background with timeout
+
+**Verified working (2026-01-20):**
+- PyTorch 2.6.0+cu124, CUDA available
+- Conda environment `vmat-win` activates correctly
+- Training scripts execute with GPU access
+
 ---
 
 ## 🚨 QUICK START - CURRENT STATE (2026-01-20)
@@ -776,4 +818,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (Added perceptual loss for baseline U-Net: GradientLoss3D + VGGPerceptualLoss2D)*
+*Last updated: 2026-01-20 (Added Claude Code WSL→Windows passthrough instructions for running training)*
