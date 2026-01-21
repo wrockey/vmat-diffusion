@@ -98,12 +98,12 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 **Conclusion:** Skip VGG in future experiments. VGG helps global accuracy but not spatial accuracy (Gamma).
 
 ### What To Do Next
-1. ✅ **Try adversarial loss (PatchGAN)** - For edge sharpness
-2. ✅ **Try structure-weighted loss** - Weight PTV regions 2x
-3. ✅ **Try DVH-aware loss** - Penalize D95 underdosing
+1. ✅ **DVH-aware loss** ← **PRIORITY** - Directly optimizes clinical metrics
+2. ✅ **Structure-weighted loss** - Weight PTV regions 2x
+3. ✅ **Adversarial loss (PatchGAN)** - For edge sharpness
 4. ✅ **Data augmentation** - Critical with n=23
 5. ❌ **Don't use VGG** - Doesn't help Gamma
-6. ❌ **Don't continue DDPM work**
+6. ⚠️ **DDPM may be viable** - See "Semi-Multi-Modal Hypothesis" below
 
 ### Key Files
 - **Best model (MAE):** `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
@@ -293,38 +293,52 @@ Success criteria:
 
 **PRIMARY GOAL: Achieve 95% Gamma (3%/3mm) pass rate for clinical deployment.**
 
-Current status: 27.9% Gamma (Phase A gradient loss)
+Current status: ~28% Gamma (Phase A & B - VGG didn't help)
 
 ```
-Phase B: grad_vgg_combined
+Phase B Result: Gamma ≈ 28% (VGG doesn't help) ✅ CONFIRMED
 │
-├── IF Gamma ≥ 50%: Major progress!
-│   ├── Run grad_loss_sweep (tune weights: 0.05, 0.1, 0.2)
-│   ├── Run vgg_loss_sweep (tune weights: 0.0005, 0.001, 0.002)
-│   └── Continue to Phase C (adversarial loss)
+├── IMMEDIATE: DVH-Aware Loss (Phase C)
+│   │
+│   ├── IF Gamma ≥ 50%: DVH approach working!
+│   │   ├── Add structure-weighted loss
+│   │   ├── Tune DVH weights
+│   │   └── Consider revisiting DDPM with DVH metrics
+│   │
+│   ├── IF Gamma 35-50%: Partial improvement
+│   │   ├── Add structure-weighted loss
+│   │   ├── Try adversarial loss
+│   │   └── Analyze region-specific Gamma
+│   │
+│   └── IF Gamma ≈ 28%: DVH alone insufficient
+│       ├── Add adversarial loss (PatchGAN)
+│       ├── Try structure-weighted loss
+│       └── Consider physics-bounded DDPM
 │
-├── IF Gamma 35-50%: Moderate improvement
-│   ├── Run grad_loss_sweep to optimize
-│   ├── Try adversarial loss (PatchGAN discriminator)
-│   └── Consider architecture upgrades
+├── PARALLEL: Validate Semi-Multi-Modal Hypothesis
+│   ├── Analyze ground-truth low-dose variability
+│   ├── Compute region-specific Gamma (PTV vs no-man's land)
+│   └── Document findings for publication
 │
-└── IF Gamma ≈ 28% (no improvement): VGG not helping
-    ├── Skip VGG, revert to gradient-only
-    ├── Try adversarial loss directly
-    └── Consider Flow Matching as alternative approach
+└── FALLBACK: Physics-Bounded DDPM (if baseline plateaus)
+    ├── Only if DVH + structure-weighted + adversarial < 50% Gamma
+    ├── Implement region-aware losses
+    └── Add physics surrogates (falloff, homogeneity)
 ```
 
-### Experiment Priority Queue (After Phase B)
+### Experiment Priority Queue (Updated 2026-01-21)
 
 **📋 AUTHORITATIVE TODO: See `notebooks/EXPERIMENTS_INDEX.md` for full experiment tracking.**
 
+**Phase B Complete:** VGG doesn't help Gamma. Skip VGG, proceed with DVH-aware and structure-weighted losses.
+
 **Tier 1 - Loss Function Improvements (highest impact expected):**
-1. `grad_vgg_combined` ← Phase B (CURRENT)
-2. `grad_loss_sweep` - Tune gradient weight (0.05, 0.1, 0.2)
-3. `vgg_loss_sweep` - Tune VGG weight (0.0005, 0.001, 0.002)
-4. `structure_weighted_loss` - Weight MSE by clinical importance (2x PTV, 1.5x OAR boundaries)
-5. `dvh_aware_loss` - Differentiable DVH loss (penalize D95 < Rx, OAR Dmean > constraint)
-6. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
+1. ~~`grad_vgg_combined`~~ ✅ Phase B Complete - VGG doesn't help Gamma
+2. **`dvh_aware_loss`** ← **NEXT PRIORITY** - Directly optimizes clinical metrics (D95, Dmean, Vx)
+3. **`structure_weighted_loss`** - Weight MSE by clinical importance (2x PTV, 1.5x OAR boundaries)
+4. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
+5. `grad_loss_sweep` - Tune gradient weight (0.05, 0.1, 0.2) - lower priority now
+6. ~~`vgg_loss_sweep`~~ - Skip (VGG doesn't help Gamma)
 7. `combined_optimal` - Best losses combined (after individual testing)
 
 **Tier 2 - Data & Augmentation (critical with n=23):**
@@ -375,7 +389,99 @@ To reach clinical-grade 95% Gamma, we likely need MULTIPLE improvements:
 - Site-specific models (prostate-only vs multi-site)
 - Relaxed criteria (5%/5mm instead of 3%/3mm)
 
-❌ **Don't continue DDPM tuning** - structural issues won't be fixed
+---
+
+## 🔬 Semi-Multi-Modal Hypothesis (2026-01-21)
+
+**New insight: Dose prediction may be semi-multi-modal, not purely deterministic.**
+
+### The Realization
+
+Our earlier conclusion that "DDPM is unsuitable because dose has one right answer" overlooked a key nuance:
+
+| Region | Constraint Type | Flexibility | Metric Approach |
+|--------|-----------------|-------------|-----------------|
+| **PTV** | Hard (D95 ≥ 95% Rx) | None - deterministic | Strict MAE/Gamma |
+| **OARs** | Hard (V70 < 15%, etc.) | Minimal | DVH compliance |
+| **No-man's land** | Physics-bounded | **High** - many valid solutions | Relaxed metrics |
+
+The low/intermediate dose "spray" (10-50 Gy) between PTVs and OARs can vary significantly while still meeting clinical constraints. Different DVH shapes and isodose distributions can be equally valid.
+
+### Why This Matters
+
+**Current metrics may be too strict:**
+- MAE/Gamma penalize ALL deviations equally
+- Valid variations in flexible regions are treated as errors
+- This explains DDPM's "blurring" - it averages multiple valid low-dose solutions
+
+**DDPM's behavior reinterpreted:**
+- "More steps = worse" → Over-denoising averages out valid diversity
+- "Near-zero sample variability" → Model learned average of valid solutions
+- "Matches but doesn't beat baseline" → Both converge to same average
+
+### Physics Constraints on Flexibility
+
+Low-dose flexibility is NOT unlimited - it's bounded by:
+- Beam penumbra and energy deposition physics
+- MLC leaf motion rates and linac capabilities
+- Dose falloff from inverse square law
+- Build-up effects near surfaces
+
+**Risk of over-relaxation:** Random hot spots, poor homogeneity, unphysical gradients.
+
+### Recommended Validation Path
+
+**Phase 1: Validate the hypothesis (low effort)**
+```python
+# Analyze ground-truth doses for natural variation in no-man's land
+# If clinical plans show significant low-dose diversity, hypothesis is supported
+```
+
+**Phase 2: DVH-aware loss on baseline U-Net (medium effort)**
+- Add differentiable DVH loss to current working baseline
+- Focus on D95 (PTV), Dmean/Vx (OARs)
+- Relax pixel-wise loss in flexible regions
+
+**Phase 3: Structure-weighted loss (already planned)**
+- 2x weight in PTV → accurate high-dose
+- 1.5x weight at OAR boundaries → constraint compliance
+- 0.5x weight in no-man's land → implicit flexibility
+
+**Phase 4: Physics-bounded DDPM (only if 1-3 insufficient)**
+- Region-specific noise schedules
+- Physics-informed regularizers (falloff, homogeneity)
+- Bounded multi-modality sampling
+
+### Key Experiments to Add
+
+1. **`dvh_aware_loss`** ← **ELEVATED PRIORITY**
+   - Differentiable D95, Dmean, Vx metrics
+   - Penalize constraint violations, not pixel differences
+   - May unlock clinically-focused optimization
+
+2. **`region_specific_gamma`** (diagnostic)
+   - Compute Gamma separately for PTV, OAR, flexible regions
+   - Understand where errors concentrate
+
+3. **`low_dose_variability_analysis`** (validation)
+   - Analyze ground-truth doses for natural variation
+   - Define "acceptable bounds" from clinical data
+
+4. **`physics_bounded_ddpm`** (future, if needed)
+   - Region-aware losses, physics surrogates
+   - Only pursue if simpler approaches fail
+
+### Decision: DDPM Status
+
+**Previous:** ❌ "Don't continue DDPM tuning"
+
+**Updated:** ⚠️ "DDPM may be viable with proper metrics"
+- Don't pursue DDPM *with current pixel-wise metrics*
+- Revisit DDPM *after* DVH/structure-weighted losses tested on baseline
+- If baseline + DVH loss hits 50%+ Gamma, DDPM likely unnecessary
+- If baseline plateaus at ~30% Gamma, physics-bounded DDPM worth exploring
+
+**See:** `notebooks/2026-01-21_semi_multi_modal_hypothesis.ipynb` for full analysis.
 
 ---
 

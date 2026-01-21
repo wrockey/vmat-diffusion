@@ -99,6 +99,7 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
 - [x] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results ✅
 - [x] `2026-01-21_grad_vgg_combined.ipynb` - Document Grad+VGG experiment results ✅
+- [ ] `2026-01-21_semi_multi_modal_hypothesis.ipynb` - Semi-multi-modal hypothesis analysis ← NEW
 
 ---
 
@@ -138,7 +139,11 @@ Examples:
 
 Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
 
-**Key insight (Phase B):** VGG perceptual loss does NOT improve Gamma. Need adversarial or structure-weighted losses.
+**Key insight (Phase B):** VGG perceptual loss does NOT improve Gamma. Need DVH-aware or structure-weighted losses.
+
+**🔬 NEW: Semi-Multi-Modal Hypothesis (2026-01-21)**
+
+Dose prediction may be semi-multi-modal: PTV/OAR regions are deterministic, but low/intermediate dose "spray" in no-man's land is flexible. Multiple valid solutions exist if DVH constraints are met. This reframes DDPM as potentially viable with proper metrics. See `notebooks/2026-01-21_semi_multi_modal_hypothesis.ipynb` for analysis.
 
 #### Phase A: Gradient Loss ✅ COMPLETE
 - [x] ~~grad_loss_0.1~~ ✅ **COMPLETE** (gradient loss only, weight=0.1)
@@ -156,19 +161,22 @@ Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
   - Best checkpoint: `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
   - **Conclusion: VGG improves MAE but NOT Gamma. Skip VGG in future experiments.** ❌
 
-#### Phase C: Loss Tuning & Clinical Losses
-- [ ] grad_loss_sweep (tune gradient_loss_weight: 0.05, 0.1, 0.2)
-- [ ] vgg_loss_sweep (tune vgg_loss_weight: 0.0005, 0.001, 0.002)
-- [ ] **structure_weighted_loss** ⭐ NEW (weight MSE by clinical importance)
-  - 2x weight for PTV70/PTV56 regions
-  - 1.5x weight for OAR boundaries (via SDF gradients)
-  - Rationale: Addresses D95 underdosing (-10 to -22 Gy error seen in baseline)
-  - Implementation: Multiply MSE by mask weights before reduction
-- [ ] **dvh_aware_loss** ⭐ NEW (differentiable DVH metrics)
+#### Phase C: DVH-Aware & Structure-Weighted Losses ← CURRENT PRIORITY
+- [ ] **dvh_aware_loss** 🔥 **NEXT UP** (differentiable DVH metrics)
   - Penalize if PTV D95 < prescription dose
   - Penalize if OAR Dmean > constraint
-  - Rationale: Directly optimizes what clinicians care about
+  - Rationale: Directly optimizes what clinicians care about, addresses semi-multi-modal hypothesis
   - Implementation: Approximate DVH via sorted dose histograms per structure (differentiable)
+  - **Key insight:** May unlock clinically-focused optimization that pixel-wise losses miss
+  - Command: `python scripts\train_baseline_unet.py --exp_name dvh_aware_loss --data_dir I:\processed_npz --use_gradient_loss --use_dvh_loss --epochs 100`
+- [ ] **structure_weighted_loss** ⭐ HIGH PRIORITY (weight MSE by clinical importance)
+  - 2x weight for PTV70/PTV56 regions
+  - 1.5x weight for OAR boundaries (via SDF gradients)
+  - 0.5x weight in "no-man's land" (flexible regions)
+  - Rationale: Addresses D95 underdosing (-10 to -22 Gy error seen in baseline)
+  - Implementation: Multiply MSE by mask weights before reduction
+- [ ] grad_loss_sweep (tune gradient_loss_weight: 0.05, 0.1, 0.2) - lower priority
+- [ ] ~~vgg_loss_sweep~~ - SKIP (VGG doesn't help Gamma)
 
 #### Phase D: Adversarial Training
 - [ ] adversarial_loss (PatchGAN discriminator for sharper edges)
@@ -176,6 +184,21 @@ Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
   - Start with small λ=0.1 for stability
   - Expected: Gamma toward 80-95% if losses above stall
 - [ ] combined_optimal (best losses combined after individual testing)
+
+#### Phase E: Semi-Multi-Modal Validation & DDPM Revisit (if needed)
+- [ ] **low_dose_variability_analysis** 🔬 DIAGNOSTIC (analyze ground-truth variation)
+  - Compute variance of doses in no-man's land across cases
+  - Define "acceptable bounds" from clinical data
+  - Validate semi-multi-modal hypothesis
+- [ ] **region_specific_gamma** 🔬 DIAGNOSTIC (understand error distribution)
+  - Compute Gamma separately for PTV, OAR, and flexible regions
+  - Understand where prediction errors concentrate
+  - May reveal that Gamma failures are in flexible regions (acceptable) vs PTV (not acceptable)
+- [ ] **physics_bounded_ddpm** (only if baseline + DVH plateaus at ~30% Gamma)
+  - Region-aware noise schedules
+  - Physics-informed regularizers (falloff, homogeneity constraints)
+  - Bounded multi-modality sampling
+  - Hot-spot prevention (max dose outside PTV < 105% Rx)
 
 **CLI options in `train_baseline_unet.py`:**
 - `--use_gradient_loss` - Enable 3D Sobel gradient loss
@@ -198,7 +221,17 @@ Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
   - Current evaluation underestimates true performance
   - Use pymedphys with subsample=1 for accuracy
 
-### 2. Diffusion Models (DDPM) - **NOT RECOMMENDED**
+### 2. Diffusion Models (DDPM) - **STATUS REVISED**
+
+**Previous assessment:** NOT RECOMMENDED (dose is deterministic, DDPM provides no benefit)
+
+**Revised assessment (2026-01-21):** ⚠️ **MAY BE VIABLE WITH DVH METRICS**
+- Semi-multi-modal hypothesis suggests low-dose regions are flexible
+- DDPM's "blurring" may be averaging valid solutions, not failing
+- Revisit DDPM *after* DVH-aware loss tested on baseline
+- If baseline + DVH plateaus, physics-bounded DDPM worth exploring
+- See: `notebooks/2026-01-21_semi_multi_modal_hypothesis.ipynb`
+
 - [x] ~~ddpm_dose_v1~~ (Complete - 2026-01-20, git: 3efbea0)
   - Run directory: `runs/vmat_dose_ddpm/`
   - Platform: Native Windows/Pinokio (stable, GPU 44-58°C)
@@ -279,4 +312,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-21 (Phase B complete - VGG doesn't help Gamma; added results and notebook)*
+*Last updated: 2026-01-21 (Added semi-multi-modal hypothesis; elevated DVH-aware loss priority; revised DDPM assessment)*
