@@ -192,11 +192,40 @@ After Phase 1 analysis, **DDPM is not the right approach for dose prediction:**
 
 ### In Progress 🔄
 
-None currently.
+**2026-01-20: Perceptual Loss Implementation for Baseline U-Net**
+- Added `GradientLoss3D` class (3D Sobel gradient loss for edge preservation)
+- Added `VGGPerceptualLoss2D` class (slice-wise VGG feature matching)
+- Integrated into `train_baseline_unet.py` with new CLI arguments
+- Goal: Improve Gamma pass rate from 14.2% toward 50%+ target
 
 ### Next Steps 📋
 
 **DDPM optimization complete. Pivot to alternative approaches.**
+
+**Immediate: Perceptual Loss Ablation Experiments**
+
+Run in Windows cmd.exe after activating vmat-win:
+```cmd
+call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
+cd C:\Users\Bill\vmat-diffusion-project
+
+:: Phase A: Gradient Loss Only (run first)
+python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 ^
+    --data_dir I:\processed_npz ^
+    --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100
+
+:: Phase B: Add VGG if gradient helps
+python scripts\train_baseline_unet.py --exp_name grad_vgg_combined ^
+    --data_dir I:\processed_npz ^
+    --use_gradient_loss --gradient_loss_weight 0.1 ^
+    --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100
+```
+
+Success criteria:
+- MAE: maintain < 2.0 Gy (don't sacrifice much from 1.43 Gy baseline)
+- Gamma (3%/3mm): improve from 14.2% toward 50%+
+- Training time: < 4 hours
+- GPU memory: < 20 GB
 
 **Recommended Path Forward:**
 1. ✅ **Improve baseline** with perceptual/adversarial loss (highest priority)
@@ -207,7 +236,7 @@ None currently.
 **Immediate actions:**
 1. Update inference code to use 50 DDIM steps as default
 2. Run test set evaluation with optimal DDPM parameters (for completeness)
-3. Implement perceptual loss for baseline U-Net
+3. ✅ ~~Implement perceptual loss for baseline U-Net~~ (DONE - see experiments above)
 4. Research Flow Matching implementation
 
 **Environment note:** numba/pymedphys[tests] is now installed - gamma metrics should work.
@@ -747,4 +776,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (Strategic assessment - DDPM not recommended, pivot to baseline improvements or Flow Matching)*
+*Last updated: 2026-01-20 (Added perceptual loss for baseline U-Net: GradientLoss3D + VGGPerceptualLoss2D)*

@@ -260,6 +260,188 @@ class ConvBlock3D(nn.Module):
         return h + self.residual(x)
 
 
+# =============================================================================
+# Perceptual Loss Components
+# =============================================================================
+
+class GradientLoss3D(nn.Module):
+    """
+    3D Sobel gradient loss for edge preservation.
+
+    Computes spatial gradients using Sobel operators and penalizes
+    differences between predicted and target gradients.
+
+    Memory overhead: ~25 MB (negligible)
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        # 3D Sobel kernels for gradient computation
+        # Shape: (3, 1, 3, 3, 3) - one kernel per axis (Y, X, Z)
+        sobel_y = torch.tensor([
+            [[-1, -2, -1], [-2, -4, -2], [-1, -2, -1]],
+            [[ 0,  0,  0], [ 0,  0,  0], [ 0,  0,  0]],
+            [[ 1,  2,  1], [ 2,  4,  2], [ 1,  2,  1]]
+        ], dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # (1, 1, 3, 3, 3)
+
+        sobel_x = torch.tensor([
+            [[-1,  0,  1], [-2,  0,  2], [-1,  0,  1]],
+            [[-2,  0,  2], [-4,  0,  4], [-2,  0,  2]],
+            [[-1,  0,  1], [-2,  0,  2], [-1,  0,  1]]
+        ], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+
+        sobel_z = torch.tensor([
+            [[-1, -2, -1], [ 0,  0,  0], [ 1,  2,  1]],
+            [[-2, -4, -2], [ 0,  0,  0], [ 2,  4,  2]],
+            [[-1, -2, -1], [ 0,  0,  0], [ 1,  2,  1]]
+        ], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+
+        # Normalize kernels
+        sobel_y = sobel_y / sobel_y.abs().sum()
+        sobel_x = sobel_x / sobel_x.abs().sum()
+        sobel_z = sobel_z / sobel_z.abs().sum()
+
+        # Register as buffers (not trainable, but move with model)
+        self.register_buffer('sobel_y', sobel_y)
+        self.register_buffer('sobel_x', sobel_x)
+        self.register_buffer('sobel_z', sobel_z)
+
+    def compute_gradients(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute 3D spatial gradients using Sobel operators.
+
+        Args:
+            x: (B, 1, H, W, D) tensor
+
+        Returns:
+            (B, 3, H, W, D) tensor of gradient magnitudes per axis
+        """
+        grad_y = F.conv3d(x, self.sobel_y, padding=1)
+        grad_x = F.conv3d(x, self.sobel_x, padding=1)
+        grad_z = F.conv3d(x, self.sobel_z, padding=1)
+
+        return torch.cat([grad_y, grad_x, grad_z], dim=1)
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Compute gradient loss between prediction and target.
+
+        Args:
+            pred: (B, 1, H, W, D) predicted dose
+            target: (B, 1, H, W, D) target dose
+
+        Returns:
+            Scalar gradient loss (L1 between gradients)
+        """
+        pred_grads = self.compute_gradients(pred)
+        target_grads = self.compute_gradients(target)
+
+        # L1 loss on gradients (more robust to outliers than L2)
+        return F.l1_loss(pred_grads, target_grads)
+
+
+class VGGPerceptualLoss2D(nn.Module):
+    """
+    2D VGG perceptual loss applied slice-by-slice.
+
+    Uses pretrained VGG16 features to encourage perceptually similar
+    dose distributions with preserved edges and structure.
+
+    Memory overhead: ~400 MB for VGG16 features
+    """
+
+    def __init__(self, slice_stride: int = 8, feature_layers: list = None):
+        """
+        Args:
+            slice_stride: Process every Nth slice to control memory/compute
+            feature_layers: Which VGG layers to use (default: [4, 9, 16])
+        """
+        super().__init__()
+
+        self.slice_stride = slice_stride
+        self.feature_layers = feature_layers or [4, 9, 16]  # relu1_2, relu2_2, relu3_3
+
+        # Load pretrained VGG16
+        try:
+            from torchvision.models import vgg16, VGG16_Weights
+            vgg = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
+        except ImportError:
+            # Fallback for older torchvision
+            from torchvision.models import vgg16
+            vgg = vgg16(pretrained=True)
+
+        # Extract feature layers
+        self.features = nn.ModuleList()
+        prev_layer = 0
+        for layer_idx in self.feature_layers:
+            self.features.append(nn.Sequential(*list(vgg.features.children())[prev_layer:layer_idx]))
+            prev_layer = layer_idx
+
+        # Freeze VGG weights
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # ImageNet normalization (VGG expects this)
+        self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalize for VGG (expects ImageNet-style input)."""
+        return (x - self.mean) / self.std
+
+    def extract_features(self, x: torch.Tensor) -> list:
+        """Extract multi-scale features from VGG."""
+        features = []
+        for layer in self.features:
+            x = layer(x)
+            features.append(x)
+        return features
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Compute perceptual loss between prediction and target.
+
+        Args:
+            pred: (B, 1, H, W, D) predicted dose
+            target: (B, 1, H, W, D) target dose
+
+        Returns:
+            Scalar perceptual loss
+        """
+        B, C, H, W, D = pred.shape
+
+        total_loss = 0.0
+        n_slices = 0
+
+        # Process slices along depth dimension
+        for z in range(0, D, self.slice_stride):
+            # Extract 2D slices: (B, 1, H, W)
+            pred_slice = pred[:, :, :, :, z]
+            target_slice = target[:, :, :, :, z]
+
+            # Convert grayscale to RGB by repeating channels
+            pred_rgb = pred_slice.repeat(1, 3, 1, 1)  # (B, 3, H, W)
+            target_rgb = target_slice.repeat(1, 3, 1, 1)
+
+            # Normalize for VGG
+            pred_rgb = self.normalize(pred_rgb)
+            target_rgb = self.normalize(target_rgb)
+
+            # Extract features
+            pred_features = self.extract_features(pred_rgb)
+            target_features = self.extract_features(target_rgb)
+
+            # Compute feature-wise L1 loss
+            for pf, tf in zip(pred_features, target_features):
+                total_loss = total_loss + F.l1_loss(pf, tf)
+
+            n_slices += 1
+
+        # Average over slices and feature layers
+        return total_loss / (n_slices * len(self.feature_layers))
+
+
 class BaselineUNet3D(nn.Module):
     """
     3D U-Net for direct dose regression.
@@ -374,17 +556,27 @@ class BaselineDosePredictor(pl.LightningModule):
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-2,
         rx_dose_gy: float = 70.0,
+        # Perceptual loss options
+        use_gradient_loss: bool = False,
+        gradient_loss_weight: float = 0.1,
+        use_vgg_loss: bool = False,
+        vgg_loss_weight: float = 0.001,
+        vgg_slice_stride: int = 8,
     ):
         super().__init__()
         self.save_hyperparameters()
-        
+
         self.model = BaselineUNet3D(
             in_channels=in_channels,
             out_channels=out_channels,
             base_channels=base_channels,
             constraint_dim=constraint_dim,
         )
-        
+
+        # Initialize perceptual loss modules
+        self.gradient_loss = GradientLoss3D() if use_gradient_loss else None
+        self.vgg_loss = VGGPerceptualLoss2D(slice_stride=vgg_slice_stride) if use_vgg_loss else None
+
         self.validation_step_outputs = []
     
     def forward(self, condition: torch.Tensor, constraints: torch.Tensor) -> torch.Tensor:
@@ -394,20 +586,38 @@ class BaselineDosePredictor(pl.LightningModule):
         condition = batch['condition']
         dose = batch['dose']
         constraints = batch['constraints']
-        
+
         # Forward pass
         pred_dose = self.model(condition, constraints)
-        
-        # MSE loss on dose
-        loss = F.mse_loss(pred_dose, dose)
-        
+
+        # Primary loss: MSE on dose
+        mse_loss = F.mse_loss(pred_dose, dose)
+
         # Physics penalty (negative dose)
         negative_penalty = F.relu(-pred_dose).mean()
-        loss = loss + 0.1 * negative_penalty
-        
-        self.log('train/loss', loss, prog_bar=True, on_step=True, on_epoch=True)
-        
-        return loss
+
+        # Combine losses
+        total_loss = mse_loss + 0.1 * negative_penalty
+
+        # Log base losses
+        self.log('train/mse_loss', mse_loss, on_step=False, on_epoch=True)
+        self.log('train/neg_penalty', negative_penalty, on_step=False, on_epoch=True)
+
+        # Optional: Gradient loss
+        if self.gradient_loss is not None:
+            grad_loss = self.gradient_loss(pred_dose, dose)
+            total_loss = total_loss + self.hparams.gradient_loss_weight * grad_loss
+            self.log('train/grad_loss', grad_loss, on_step=False, on_epoch=True)
+
+        # Optional: VGG perceptual loss
+        if self.vgg_loss is not None:
+            vgg_loss = self.vgg_loss(pred_dose, dose)
+            total_loss = total_loss + self.hparams.vgg_loss_weight * vgg_loss
+            self.log('train/vgg_loss', vgg_loss, on_step=False, on_epoch=True)
+
+        self.log('train/loss', total_loss, prog_bar=True, on_step=True, on_epoch=True)
+
+        return total_loss
     
     def validation_step(self, batch: Dict, batch_idx: int) -> None:
         condition = batch['condition']
@@ -718,7 +928,19 @@ def main():
     parser.add_argument('--rx_dose_gy', type=float, default=70.0)
     parser.add_argument('--devices', type=int, default=1)
     parser.add_argument('--strategy', type=str, default='auto')
-    
+
+    # Perceptual loss options
+    parser.add_argument('--use_gradient_loss', action='store_true',
+                        help='Enable 3D Sobel gradient loss for edge preservation')
+    parser.add_argument('--gradient_loss_weight', type=float, default=0.1,
+                        help='Weight for gradient loss (default: 0.1)')
+    parser.add_argument('--use_vgg_loss', action='store_true',
+                        help='Enable 2D VGG perceptual loss (slice-wise)')
+    parser.add_argument('--vgg_loss_weight', type=float, default=0.001,
+                        help='Weight for VGG loss (default: 0.001)')
+    parser.add_argument('--vgg_slice_stride', type=int, default=8,
+                        help='Process every Nth slice for VGG loss (default: 8)')
+
     args = parser.parse_args()
 
     # Validate data_dir
@@ -816,11 +1038,26 @@ def main():
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         rx_dose_gy=args.rx_dose_gy,
+        # Perceptual loss options
+        use_gradient_loss=args.use_gradient_loss,
+        gradient_loss_weight=args.gradient_loss_weight,
+        use_vgg_loss=args.use_vgg_loss,
+        vgg_loss_weight=args.vgg_loss_weight,
+        vgg_slice_stride=args.vgg_slice_stride,
     )
-    
+
     param_count = sum(p.numel() for p in model.parameters())
     print(f"\nModel: BaselineUNet3D (Direct Regression)")
     print(f"Parameters: {param_count:,} ({param_count/1e6:.2f}M)")
+
+    # Print loss configuration
+    print("\nLoss configuration:")
+    print(f"  MSE loss: weight=1.0")
+    print(f"  Negative penalty: weight=0.1")
+    if args.use_gradient_loss:
+        print(f"  Gradient loss (3D Sobel): weight={args.gradient_loss_weight}")
+    if args.use_vgg_loss:
+        print(f"  VGG perceptual loss: weight={args.vgg_loss_weight}, slice_stride={args.vgg_slice_stride}")
     
     # Callbacks
     callbacks = [

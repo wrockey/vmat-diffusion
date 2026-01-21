@@ -84,8 +84,27 @@ Examples:
 ## Experiment Categories
 
 ### 1. Baseline Models
-- [ ] ~~baseline_unet_run1~~ (Complete - 2026-01-19)
+- [x] ~~baseline_unet_run1~~ (Complete - 2026-01-19)
 - [ ] baseline_unet_larger (Planned - increased capacity)
+
+### 1a. Perceptual Loss Experiments (Baseline U-Net with Edge Losses)
+
+Goal: Improve Gamma pass rate from 14.2% toward 50%+ by adding gradient-based losses.
+
+- [ ] grad_loss_0.1 (Next - gradient loss only, weight=0.1)
+  - Command: `python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100`
+  - Expected: Improved edge preservation, better Gamma
+- [ ] grad_vgg_combined (Planned - gradient + VGG perceptual loss)
+  - Command: `python scripts\train_baseline_unet.py --exp_name grad_vgg_combined --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100`
+  - Run after grad_loss_0.1 if gradient loss helps
+- [ ] grad_loss_sweep (Planned - tune gradient_loss_weight: 0.05, 0.1, 0.2)
+
+**New CLI options added to `train_baseline_unet.py`:**
+- `--use_gradient_loss` - Enable 3D Sobel gradient loss
+- `--gradient_loss_weight 0.1` - Weight for gradient loss (default: 0.1)
+- `--use_vgg_loss` - Enable 2D VGG perceptual loss (slice-wise)
+- `--vgg_loss_weight 0.001` - Weight for VGG loss (default: 0.001)
+- `--vgg_slice_stride 8` - Process every Nth slice for VGG (default: 8)
 
 ### 2. Diffusion Models (DDPM) - **NOT RECOMMENDED**
 - [x] ~~ddpm_dose_v1~~ (Complete - 2026-01-20, git: 3efbea0)
@@ -156,4 +175,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (Strategic assessment complete - DDPM not recommended, pivot to baseline improvements)*
+*Last updated: 2026-01-20 (Added perceptual loss experiments - GradientLoss3D + VGGPerceptualLoss2D)*
