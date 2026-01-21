@@ -234,11 +234,17 @@ After Phase 1 analysis, **DDPM is not the right approach for dose prediction:**
 
 ### In Progress 🔄
 
-**2026-01-20: Perceptual Loss Implementation for Baseline U-Net**
+**2026-01-20: Gradient Loss Experiment (grad_loss_0.1) - TRAINING**
+- Git hash: `5d111a0`
+- Run directory: `runs/grad_loss_0.1/`
+- Config: BaselineUNet3D + GradientLoss3D (weight=0.1), 100 epochs
+- Goal: Improve Gamma pass rate from 14.2% toward 50%+ target
+- Status: Training started via Claude Code WSL→Windows passthrough
+
+**2026-01-20: Perceptual Loss Implementation for Baseline U-Net** ✅
 - Added `GradientLoss3D` class (3D Sobel gradient loss for edge preservation)
 - Added `VGGPerceptualLoss2D` class (slice-wise VGG feature matching)
 - Integrated into `train_baseline_unet.py` with new CLI arguments
-- Goal: Improve Gamma pass rate from 14.2% toward 50%+ target
 
 ### Next Steps 📋
 
@@ -818,4 +824,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-20 (Added Claude Code WSL→Windows passthrough instructions for running training)*
+*Last updated: 2026-01-20 (grad_loss_0.1 experiment started - git 5d111a0)*

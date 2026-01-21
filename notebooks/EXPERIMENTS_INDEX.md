@@ -16,6 +16,7 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-20 | phase1_sampling | TBD | - | DDPM inference | **3.80 Gy MAE** (50 steps) | Complete |
 | 2026-01-20 | phase1_ensemble | TBD | - | DDPM inference | **3.78 Gy MAE** (n=1) | Complete |
 | 2026-01-20 | strategic_assessment | `206f84c` | [2026-01-20_strategic_assessment.ipynb](2026-01-20_strategic_assessment.ipynb) | Analysis | - | Complete |
+| 2026-01-20 | grad_loss_0.1 | `5d111a0` | **⚠️ NEEDS CREATION** | BaselineUNet3D+GradLoss | TBD | **In Progress** |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
@@ -54,6 +55,7 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 - [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
 - [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
+- [ ] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment (create after training completes)
 
 ---
 
@@ -91,7 +93,7 @@ Examples:
 
 Goal: Improve Gamma pass rate from 14.2% toward 50%+ by adding gradient-based losses.
 
-- [ ] grad_loss_0.1 (Next - gradient loss only, weight=0.1)
+- [🔄] grad_loss_0.1 (**IN PROGRESS** - gradient loss only, weight=0.1)
   - Command: `python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100`
   - Expected: Improved edge preservation, better Gamma
 - [ ] grad_vgg_combined (Planned - gradient + VGG perceptual loss)
@@ -175,4 +177,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (Added perceptual loss experiments - GradientLoss3D + VGGPerceptualLoss2D)*
+*Last updated: 2026-01-20 (grad_loss_0.1 experiment started - git 5d111a0)*
