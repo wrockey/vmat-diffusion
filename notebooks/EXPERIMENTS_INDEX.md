@@ -12,9 +12,9 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 |------|---------------|----------|----------|-------|-------------|--------|
 | 2026-01-19 | baseline_unet_run1 | `b3f0c08` | [2026-01-19_baseline_unet_experiment.ipynb](2026-01-19_baseline_unet_experiment.ipynb) | BaselineUNet3D | 3.73 Gy MAE (val) | Complete |
 | 2026-01-19 | baseline_unet_test_eval | `b3f0c08` | [2026-01-19_baseline_unet_test_evaluation.ipynb](2026-01-19_baseline_unet_test_evaluation.ipynb) | BaselineUNet3D | 1.43 Gy MAE, 14.2% Gamma (test) | Complete |
-| 2026-01-20 | ddpm_dose_v1 | `3efbea0` | **⚠️ NEEDS CREATION** | SimpleUNet3D+DDPM | 12.19 Gy MAE (val) | Complete (underperformed) |
-| 2026-01-20 | phase1_sampling | TBD | - | DDPM inference | **3.80 Gy MAE** (50 steps) | Complete |
-| 2026-01-20 | phase1_ensemble | TBD | - | DDPM inference | **3.78 Gy MAE** (n=1) | Complete |
+| 2026-01-20 | ddpm_dose_v1 | `3efbea0` | [2026-01-20_ddpm_optimization.ipynb](2026-01-20_ddpm_optimization.ipynb) | SimpleUNet3D+DDPM | 12.19→3.78 Gy MAE (optimized) | ✅ Complete |
+| 2026-01-20 | phase1_sampling | `206f84c` | [2026-01-20_ddpm_optimization.ipynb](2026-01-20_ddpm_optimization.ipynb) | DDPM inference | **3.80 Gy MAE** (50 steps) | ✅ Complete |
+| 2026-01-20 | phase1_ensemble | `206f84c` | [2026-01-20_ddpm_optimization.ipynb](2026-01-20_ddpm_optimization.ipynb) | DDPM inference | **3.78 Gy MAE** (n=1) | ✅ Complete |
 | 2026-01-20 | strategic_assessment | `206f84c` | [2026-01-20_strategic_assessment.ipynb](2026-01-20_strategic_assessment.ipynb) | Analysis | - | Complete |
 | 2026-01-20 | grad_loss_0.1 | `5d111a0` | [2026-01-20_grad_loss_experiment.ipynb](2026-01-20_grad_loss_experiment.ipynb) | BaselineUNet3D+GradLoss | **3.67 Gy MAE (val), 1.44 Gy MAE, 27.9% Gamma (test)** | ✅ Complete |
 
@@ -69,8 +69,7 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 **Recommendation:** Proceed with Phase B (gradient + VGG combined) to push Gamma higher.
 
 ### Notebooks Needing Creation
-- [ ] `2026-01-20_ddpm_v1_experiment.ipynb` - Document ddpm_dose_v1 results
-- [ ] `2026-01-20_phase1_optimization.ipynb` - Document Phase 1 optimization results
+- [x] `2026-01-20_ddpm_optimization.ipynb` - Document DDPM training + Phase 1 optimization ✅
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
 - [x] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results ✅
 
@@ -197,4 +196,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (grad_loss_0.1 experiment COMPLETE - Gamma improved from 14.2% to 27.9%!)*
+*Last updated: 2026-01-20 (DDPM notebook + figures created; all experiment documentation complete)*
