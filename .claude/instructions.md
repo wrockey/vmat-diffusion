@@ -309,26 +309,35 @@ Phase B: grad_vgg_combined
 
 ### Experiment Priority Queue (After Phase B)
 
+**📋 AUTHORITATIVE TODO: See `notebooks/EXPERIMENTS_INDEX.md` for full experiment tracking.**
+
 **Tier 1 - Loss Function Improvements (highest impact expected):**
 1. `grad_vgg_combined` ← Phase B (CURRENT)
 2. `grad_loss_sweep` - Tune gradient weight (0.05, 0.1, 0.2)
-3. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
-4. `combined_all` - Gradient + VGG + Adversarial (if individual losses help)
+3. `vgg_loss_sweep` - Tune VGG weight (0.0005, 0.001, 0.002)
+4. `structure_weighted_loss` - Weight MSE by clinical importance (2x PTV, 1.5x OAR boundaries)
+5. `dvh_aware_loss` - Differentiable DVH loss (penalize D95 < Rx, OAR Dmean > constraint)
+6. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
+7. `combined_optimal` - Best losses combined (after individual testing)
 
-**Tier 2 - Architecture Improvements:**
-5. `attention_unet` - Add attention gates to U-Net
-6. `deeper_unet` - Increase model capacity (64 or 96 base channels)
-7. `nnunet_baseline` - Try nnU-Net architecture
-8. `swin_unetr` - Transformer-based architecture
-
-**Tier 3 - Data & Training Improvements:**
+**Tier 2 - Data & Augmentation (critical with n=23):**
+8. `augmentation_v1` - Add torchio augmentations (rotations ±10°, intensity shifts, noise)
 9. `collect_100_cases` - More training data (currently 23 cases)
-10. `augmentation_sweep` - More aggressive data augmentation
-11. `full_3d_gamma` - Compute proper 3D Gamma (not just central slice)
+10. `full_3d_gamma` - Compute proper 3D Gamma (not just central slice)
+
+**Tier 3 - Architecture Improvements:**
+11. `attention_unet` - Add attention gates to U-Net
+12. `deeper_unet` - Increase model capacity (96 base channels, dropout 0.1-0.2)
+13. `nnunet_baseline` - Try nnU-Net architecture
+14. `swin_unetr` - Transformer-based architecture
 
 **Tier 4 - Alternative Approaches:**
-12. `flow_matching_v1` - Simpler than diffusion, may work better
-13. `ensemble_models` - Combine multiple models
+15. `flow_matching_v1` - Simpler than diffusion, may work better
+16. `ensemble_models` - Combine multiple models
+
+**Tier 5 - Post-95% Gamma (future):**
+17. `physics_constraints` - Monte Carlo surrogate loss for deliverability
+18. `mlc_prediction` - Phase 2: MLC/arc sequence prediction
 
 ### Gamma Milestones
 
@@ -343,11 +352,16 @@ Phase B: grad_vgg_combined
 ### What 95% Gamma Requires
 
 To reach clinical-grade 95% Gamma, we likely need MULTIPLE improvements:
-1. **Better loss functions** - Gradient + VGG + Adversarial
-2. **More data** - 100+ cases (currently 23)
-3. **Architecture upgrades** - Attention, deeper networks, or transformers
-4. **Full 3D evaluation** - Current Gamma is central slice only
-5. **Possibly:** Ensemble of models, test-time augmentation
+1. **Better loss functions** - Gradient + VGG + Structure-weighted + DVH-aware + Adversarial
+2. **Data augmentation** - Critical with only 23 cases (torchio: rotations, intensity shifts, noise)
+3. **More data** - 100+ cases when available
+4. **Architecture upgrades** - Attention, deeper networks (96 channels), or transformers
+5. **Full 3D evaluation** - Current Gamma is central slice only (underestimates true performance)
+6. **Possibly:** Ensemble of models, test-time augmentation
+
+**New loss functions to implement:**
+- **Structure-weighted MSE:** Weight errors by clinical importance (2x for PTV70/PTV56, 1.5x for OAR boundaries via SDF gradients). Addresses D95 underdosing (-10 to -22 Gy error).
+- **DVH-aware loss:** Differentiable DVH metrics. Penalize if PTV D95 < prescription or OAR Dmean > constraint. Directly optimizes what clinicians care about.
 
 **Reality check:** Literature reports 85-95% Gamma for similar tasks, but often with:
 - Larger datasets (100-500 cases)
@@ -949,4 +963,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-21 (Added decision tree and experiment priority queue; 95% Gamma is the goal)*
+*Last updated: 2026-01-21 (Added structure-weighted/DVH-aware losses, reorganized priority tiers, 95% Gamma goal)*

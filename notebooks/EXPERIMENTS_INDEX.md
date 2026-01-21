@@ -105,27 +105,67 @@ Examples:
 - [x] ~~baseline_unet_run1~~ (Complete - 2026-01-19)
 - [ ] baseline_unet_larger (Planned - increased capacity)
 
-### 1a. Perceptual Loss Experiments (Baseline U-Net with Edge Losses)
+### 1a. Loss Function Experiments (Tier 1 Priority)
 
-Goal: Improve Gamma pass rate from 14.2% toward 50%+ by adding gradient-based losses.
+**🎯 GOAL: Achieve 95% Gamma (3%/3mm) for clinical deployment.**
 
+Current: 27.9% Gamma (Phase A) → Target: 95% Gamma
+
+#### Phase A: Gradient Loss ✅ COMPLETE
 - [x] ~~grad_loss_0.1~~ ✅ **COMPLETE** (gradient loss only, weight=0.1)
   - Command: `python scripts\train_baseline_unet.py --exp_name grad_loss_0.1 --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --epochs 100`
   - **Results:** Val MAE 3.67 Gy (epoch 12), Test MAE 1.44 Gy, **Gamma 27.9%** (nearly doubled from 14.2%!)
   - Training: 1.85 hours, early stopped at epoch 62
   - Best checkpoint: `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
   - **Conclusion: Gradient loss significantly improves Gamma pass rate while maintaining MAE** ✅
-- [ ] grad_vgg_combined (Planned - gradient + VGG perceptual loss)
-  - Command: `python scripts\train_baseline_unet.py --exp_name grad_vgg_combined --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100`
-  - Run after grad_loss_0.1 if gradient loss helps
-- [ ] grad_loss_sweep (Planned - tune gradient_loss_weight: 0.05, 0.1, 0.2)
 
-**New CLI options added to `train_baseline_unet.py`:**
+#### Phase B: Combined Perceptual Losses ← CURRENT
+- [ ] **grad_vgg_combined** 🔄 **NEXT UP** (gradient + VGG perceptual loss)
+  - Command: `python scripts\train_baseline_unet.py --exp_name grad_vgg_combined --data_dir I:\processed_npz --use_gradient_loss --gradient_loss_weight 0.1 --use_vgg_loss --vgg_loss_weight 0.001 --epochs 100`
+  - Expected: Gamma +10-20% over gradient-only (target: 40-50%)
+  - Decision tree after results - see `.claude/instructions.md`
+
+#### Phase C: Loss Tuning & Clinical Losses
+- [ ] grad_loss_sweep (tune gradient_loss_weight: 0.05, 0.1, 0.2)
+- [ ] vgg_loss_sweep (tune vgg_loss_weight: 0.0005, 0.001, 0.002)
+- [ ] **structure_weighted_loss** ⭐ NEW (weight MSE by clinical importance)
+  - 2x weight for PTV70/PTV56 regions
+  - 1.5x weight for OAR boundaries (via SDF gradients)
+  - Rationale: Addresses D95 underdosing (-10 to -22 Gy error seen in baseline)
+  - Implementation: Multiply MSE by mask weights before reduction
+- [ ] **dvh_aware_loss** ⭐ NEW (differentiable DVH metrics)
+  - Penalize if PTV D95 < prescription dose
+  - Penalize if OAR Dmean > constraint
+  - Rationale: Directly optimizes what clinicians care about
+  - Implementation: Approximate DVH via sorted dose histograms per structure (differentiable)
+
+#### Phase D: Adversarial Training
+- [ ] adversarial_loss (PatchGAN discriminator for sharper edges)
+  - Use 3D PatchGAN to critique local patches
+  - Start with small λ=0.1 for stability
+  - Expected: Gamma toward 80-95% if losses above stall
+- [ ] combined_optimal (best losses combined after individual testing)
+
+**CLI options in `train_baseline_unet.py`:**
 - `--use_gradient_loss` - Enable 3D Sobel gradient loss
 - `--gradient_loss_weight 0.1` - Weight for gradient loss (default: 0.1)
 - `--use_vgg_loss` - Enable 2D VGG perceptual loss (slice-wise)
 - `--vgg_loss_weight 0.001` - Weight for VGG loss (default: 0.001)
 - `--vgg_slice_stride 8` - Process every Nth slice for VGG (default: 8)
+- *TODO: Add `--use_structure_weighted`, `--use_dvh_loss`, `--use_adversarial`*
+
+### 1b. Data & Augmentation (Tier 2 Priority - Critical with n=23)
+
+- [ ] **augmentation_v1** ⭐ NEW (torchio augmentations)
+  - Random affine transforms (rotations ±10°, shears)
+  - Intensity shifts on CT (HU ±50)
+  - Gaussian noise on doses (σ=0.01)
+  - Use `torchio` or `SimpleITK` for implementation
+  - Rationale: With only 23 cases, models overfit to averages (causing blurring)
+- [ ] collect_100_cases (more training data when available)
+- [ ] full_3d_gamma (compute proper 3D Gamma, not just central slice)
+  - Current evaluation underestimates true performance
+  - Use pymedphys with subsample=1 for accuracy
 
 ### 2. Diffusion Models (DDPM) - **NOT RECOMMENDED**
 - [x] ~~ddpm_dose_v1~~ (Complete - 2026-01-20, git: 3efbea0)
@@ -143,18 +183,30 @@ Goal: Improve Gamma pass rate from 14.2% toward 50%+ by adding gradient-based lo
 - [ ] ~~ddpm_dose_v2~~ (Cancelled - DDPM not recommended)
 - [ ] ~~ddpm_dose_v2_conditioned~~ (Cancelled - DDPM not recommended)
 
-### 2b. Alternative Generative Approaches (Recommended)
-- [ ] flow_matching_v1 (Planned - simpler than diffusion, better for regression)
-- [ ] baseline_perceptual_loss (Planned - add perceptual/adversarial loss to baseline)
+### 3. Architecture Improvements (Tier 3 Priority)
 
-### 3. Ablation Studies
-- [ ] ablation_no_sdf (Planned - binary masks only)
-- [ ] ablation_no_constraints (Planned - no FiLM conditioning)
-- [ ] ablation_patch_size (Planned - 64 vs 128 vs 160)
+- [ ] attention_unet (add attention gates to U-Net)
+- [ ] deeper_unet (increase to 96 base channels, add dropout 0.1-0.2)
+- [ ] nnunet_baseline (try nnU-Net architecture)
+- [ ] swin_unetr (Transformer-based architecture)
 
-### 4. Hyperparameter Tuning
-- [ ] lr_sweep (Planned - learning rate search)
-- [ ] batch_size_sweep (Planned)
+### 4. Alternative Approaches (Tier 4 Priority)
+
+- [ ] flow_matching_v1 (simpler than diffusion, ODE-based, faster inference)
+  - Use `torchdiffeq` for implementation
+  - Condition on anatomy similar to current approach
+- [ ] ensemble_models (combine multiple models)
+
+### 5. Ablation Studies (Lower Priority)
+
+- [ ] ablation_no_sdf (binary masks only)
+- [ ] ablation_no_constraints (no FiLM conditioning)
+- [ ] ablation_patch_size (64 vs 128 vs 160)
+
+### 6. Post-95% Gamma (Future - Tier 5)
+
+- [ ] physics_constraints (Monte Carlo surrogate loss for deliverability)
+- [ ] mlc_prediction (Phase 2: MLC/arc sequence prediction from dose)
 
 ---
 
@@ -196,4 +248,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-20 (DDPM notebook + figures created; all experiment documentation complete)*
+*Last updated: 2026-01-21 (Added structure-weighted, DVH-aware, augmentation experiments; reorganized priority tiers for 95% Gamma goal)*

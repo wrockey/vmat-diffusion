@@ -1,8 +1,13 @@
 # DDPM Optimization Plan
 
 **Created:** 2026-01-20
-**Status:** Phase 1 Complete ✅
+**Status:** ⚠️ ARCHIVED - DDPM NOT RECOMMENDED
 **Goal:** Systematically investigate why DDPM underperforms baseline and identify improvements
+
+> **📋 NOTE (2026-01-21):** This plan is archived. DDPM was found to be unsuitable for dose prediction.
+> For the current path forward (loss function improvements targeting 95% Gamma), see:
+> - `.claude/instructions.md` - Decision tree and experiment priority queue
+> - `notebooks/EXPERIMENTS_INDEX.md` - Authoritative experiment TODO list
 
 ---
 
