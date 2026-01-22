@@ -442,6 +442,348 @@ class VGGPerceptualLoss2D(nn.Module):
         return total_loss / (n_slices * len(self.feature_layers))
 
 
+class DVHAwareLoss(nn.Module):
+    """
+    Differentiable DVH-aware loss for VMAT dose prediction.
+
+    Computes clinical metrics (D95, Dmean, Vx) during training to directly
+    optimize what clinicians care about. Uses soft approximations to maintain
+    differentiability:
+    - D95: Histogram-based soft percentile (O(N×bins) memory)
+    - Vx: Sigmoid approximation for volume at threshold
+    - Dmean: Standard mean (already differentiable)
+
+    Structure indices (from STRUCTURE_CHANNELS):
+        0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder,
+        5: Femur_L, 6: Femur_R, 7: Bowel
+    """
+
+    def __init__(
+        self,
+        rx_dose_gy: float = 70.0,
+        d95_temperature: float = 0.1,
+        vx_temperature: float = 1.0,
+        d95_weight: float = 10.0,
+        vx_weight: float = 2.0,
+        dmean_weight: float = 1.0,
+        n_bins: int = 100,
+        min_voxels: int = 100,
+    ):
+        """
+        Args:
+            rx_dose_gy: Prescription dose in Gy (for absolute dose calculations)
+            d95_temperature: Temperature for soft D95 computation (lower = sharper)
+            vx_temperature: Temperature for sigmoid Vx approximation
+            d95_weight: Weight for PTV D95 penalties
+            vx_weight: Weight for OAR Vx constraint penalties
+            dmean_weight: Weight for OAR Dmean penalties
+            n_bins: Number of histogram bins for soft D95
+            min_voxels: Minimum voxels required for valid computation
+        """
+        super().__init__()
+        self.rx_dose_gy = rx_dose_gy
+        self.d95_temperature = d95_temperature
+        self.vx_temperature = vx_temperature
+        self.d95_weight = d95_weight
+        self.vx_weight = vx_weight
+        self.dmean_weight = dmean_weight
+        self.n_bins = n_bins
+        self.min_voxels = min_voxels
+
+        # Clinical constraints (as fractions of rx_dose)
+        # Rectum V70 < 15%, Bladder V70 < 25%
+        self.rectum_v70_limit = 0.15
+        self.bladder_v70_limit = 0.25
+
+    def extract_masks(self, condition: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Extract structure masks from condition tensor SDFs.
+
+        The condition tensor has channels: [CT, SDF_0, SDF_1, ..., SDF_7]
+        SDFs are signed distance fields where SDF < 0 means inside the structure.
+
+        Args:
+            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+
+        Returns:
+            Dict mapping structure names to boolean masks (B, H, W, D)
+        """
+        masks = {}
+        structure_names = ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder',
+                          'Femur_L', 'Femur_R', 'Bowel']
+
+        for idx, name in enumerate(structure_names):
+            # SDF channels start at index 1 (index 0 is CT)
+            sdf = condition[:, idx + 1, :, :, :]
+            masks[name] = sdf < 0  # Inside structure where SDF is negative
+
+        return masks
+
+    def soft_d95_histogram(
+        self,
+        dose: torch.Tensor,
+        mask: torch.Tensor,
+        temperature: float = None,
+    ) -> torch.Tensor:
+        """
+        Compute soft D95 using differentiable histogram approximation.
+
+        D95 = dose received by at least 95% of the volume.
+        Uses soft histogram bins with temperature-scaled assignment.
+
+        Args:
+            dose: (B, 1, H, W, D) dose tensor (normalized 0-1)
+            mask: (B, H, W, D) boolean mask for structure
+            temperature: Softness of histogram bins (default: self.d95_temperature)
+
+        Returns:
+            (B,) tensor of D95 values per batch element
+        """
+        if temperature is None:
+            temperature = self.d95_temperature
+
+        B = dose.shape[0]
+        d95_values = []
+
+        for b in range(B):
+            # Get dose values within mask
+            mask_b = mask[b]  # (H, W, D)
+            dose_b = dose[b, 0]  # (H, W, D)
+
+            if mask_b.sum() < self.min_voxels:
+                # Not enough voxels - return 0 (will be skipped in loss)
+                d95_values.append(torch.tensor(0.0, device=dose.device, dtype=dose.dtype))
+                continue
+
+            # Extract masked dose values
+            masked_dose = dose_b[mask_b]  # (N,)
+            n_voxels = masked_dose.shape[0]
+
+            # Create histogram bins (0 to 1.5 to handle overdose)
+            bin_edges = torch.linspace(0, 1.5, self.n_bins + 1, device=dose.device)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # (n_bins,)
+
+            # Soft histogram assignment using Gaussian kernels
+            # Shape: (N, n_bins)
+            bin_width = bin_edges[1] - bin_edges[0]
+            sigma = bin_width / 2  # Overlap between bins
+
+            # Compute soft assignments
+            diff = masked_dose.unsqueeze(1) - bin_centers.unsqueeze(0)  # (N, n_bins)
+            weights = torch.exp(-0.5 * (diff / sigma) ** 2)  # Gaussian weights
+            weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)  # Normalize
+
+            # Compute histogram (counts per bin)
+            histogram = weights.sum(dim=0)  # (n_bins,)
+
+            # Cumulative distribution (from high to low dose)
+            # D95 means 95% of volume receives at least this dose
+            histogram_reversed = histogram.flip(0)
+            cdf_reversed = histogram_reversed.cumsum(0) / n_voxels
+
+            # Find D95: where cumulative from high reaches 95%
+            target_fraction = 0.95
+
+            # Soft interpolation to find D95
+            bin_centers_reversed = bin_centers.flip(0)
+
+            # Weight bins by how close CDF is to target
+            weights_d95 = torch.exp(-((cdf_reversed - target_fraction) ** 2) / (2 * temperature ** 2))
+            weights_d95 = weights_d95 / (weights_d95.sum() + 1e-8)
+
+            d95 = (weights_d95 * bin_centers_reversed).sum()
+            d95_values.append(d95)
+
+        return torch.stack(d95_values)
+
+    def soft_vx(
+        self,
+        dose: torch.Tensor,
+        mask: torch.Tensor,
+        threshold: float,
+        temperature: float = None,
+    ) -> torch.Tensor:
+        """
+        Compute soft Vx (volume receiving at least x dose) using sigmoid.
+
+        Args:
+            dose: (B, 1, H, W, D) dose tensor (normalized 0-1)
+            mask: (B, H, W, D) boolean mask for structure
+            threshold: Dose threshold (normalized, e.g., 1.0 for 100% rx)
+            temperature: Sigmoid sharpness (default: self.vx_temperature)
+
+        Returns:
+            (B,) tensor of Vx fractions (0-1) per batch element
+        """
+        if temperature is None:
+            temperature = self.vx_temperature
+
+        B = dose.shape[0]
+        vx_values = []
+
+        for b in range(B):
+            mask_b = mask[b]  # (H, W, D)
+            dose_b = dose[b, 0]  # (H, W, D)
+
+            n_voxels = mask_b.sum()
+            if n_voxels < self.min_voxels:
+                vx_values.append(torch.tensor(0.0, device=dose.device, dtype=dose.dtype))
+                continue
+
+            # Get masked dose values
+            masked_dose = dose_b[mask_b]  # (N,)
+
+            # Soft threshold using sigmoid
+            # sigmoid((dose - threshold) / temperature)
+            # High temperature = soft, low temperature = sharp
+            above_threshold = torch.sigmoid((masked_dose - threshold) / temperature)
+
+            # Fraction of volume above threshold
+            vx = above_threshold.mean()
+            vx_values.append(vx)
+
+        return torch.stack(vx_values)
+
+    def compute_dmean(
+        self,
+        dose: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute mean dose within structure (already differentiable).
+
+        Args:
+            dose: (B, 1, H, W, D) dose tensor
+            mask: (B, H, W, D) boolean mask
+
+        Returns:
+            (B,) tensor of mean dose values
+        """
+        B = dose.shape[0]
+        dmean_values = []
+
+        for b in range(B):
+            mask_b = mask[b]
+            dose_b = dose[b, 0]
+
+            if mask_b.sum() < self.min_voxels:
+                dmean_values.append(torch.tensor(0.0, device=dose.device, dtype=dose.dtype))
+                continue
+
+            dmean = dose_b[mask_b].mean()
+            dmean_values.append(dmean)
+
+        return torch.stack(dmean_values)
+
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute DVH-aware loss.
+
+        Args:
+            pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
+            target: (B, 1, H, W, D) target dose (normalized 0-1)
+            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+
+        Returns:
+            Tuple of (total_loss, metrics_dict)
+            metrics_dict contains individual loss components for logging
+        """
+        # Extract structure masks
+        masks = self.extract_masks(condition)
+
+        metrics = {}
+        total_loss = torch.tensor(0.0, device=pred.device, dtype=pred.dtype)
+
+        # --- PTV D95 losses ---
+        # Penalize if pred D95 < target D95 (underdosing is worse than overdosing)
+
+        # PTV70 D95
+        if masks['PTV70'].any():
+            pred_d95_ptv70 = self.soft_d95_histogram(pred, masks['PTV70'])
+            target_d95_ptv70 = self.soft_d95_histogram(target, masks['PTV70'])
+
+            # Asymmetric loss: only penalize underdosing
+            d95_deficit_ptv70 = F.relu(target_d95_ptv70 - pred_d95_ptv70)
+            loss_d95_ptv70 = d95_deficit_ptv70.mean()
+
+            total_loss = total_loss + self.d95_weight * loss_d95_ptv70
+            metrics['dvh/ptv70_d95_pred'] = pred_d95_ptv70.mean()
+            metrics['dvh/ptv70_d95_target'] = target_d95_ptv70.mean()
+            metrics['dvh/ptv70_d95_loss'] = loss_d95_ptv70
+
+        # PTV56 D95 (secondary target, lower weight)
+        if masks['PTV56'].any():
+            pred_d95_ptv56 = self.soft_d95_histogram(pred, masks['PTV56'])
+            target_d95_ptv56 = self.soft_d95_histogram(target, masks['PTV56'])
+
+            d95_deficit_ptv56 = F.relu(target_d95_ptv56 - pred_d95_ptv56)
+            loss_d95_ptv56 = d95_deficit_ptv56.mean()
+
+            # Lower weight for secondary PTV
+            total_loss = total_loss + (self.d95_weight * 0.5) * loss_d95_ptv56
+            metrics['dvh/ptv56_d95_pred'] = pred_d95_ptv56.mean()
+            metrics['dvh/ptv56_d95_target'] = target_d95_ptv56.mean()
+            metrics['dvh/ptv56_d95_loss'] = loss_d95_ptv56
+
+        # --- OAR Vx constraint losses ---
+        # Penalize if Vx exceeds clinical limits
+
+        # Rectum V70 < 15%
+        if masks['Rectum'].any():
+            pred_v70_rectum = self.soft_vx(pred, masks['Rectum'], threshold=1.0)
+            target_v70_rectum = self.soft_vx(target, masks['Rectum'], threshold=1.0)
+
+            # Penalize exceeding limit OR being worse than target
+            excess_rectum = F.relu(pred_v70_rectum - self.rectum_v70_limit)
+            worse_than_target = F.relu(pred_v70_rectum - target_v70_rectum)
+            loss_v70_rectum = (excess_rectum + 0.5 * worse_than_target).mean()
+
+            total_loss = total_loss + self.vx_weight * loss_v70_rectum
+            metrics['dvh/rectum_v70_pred'] = pred_v70_rectum.mean()
+            metrics['dvh/rectum_v70_target'] = target_v70_rectum.mean()
+            metrics['dvh/rectum_v70_loss'] = loss_v70_rectum
+
+        # Bladder V70 < 25%
+        if masks['Bladder'].any():
+            pred_v70_bladder = self.soft_vx(pred, masks['Bladder'], threshold=1.0)
+            target_v70_bladder = self.soft_vx(target, masks['Bladder'], threshold=1.0)
+
+            excess_bladder = F.relu(pred_v70_bladder - self.bladder_v70_limit)
+            worse_than_target = F.relu(pred_v70_bladder - target_v70_bladder)
+            loss_v70_bladder = (excess_bladder + 0.5 * worse_than_target).mean()
+
+            total_loss = total_loss + self.vx_weight * loss_v70_bladder
+            metrics['dvh/bladder_v70_pred'] = pred_v70_bladder.mean()
+            metrics['dvh/bladder_v70_target'] = target_v70_bladder.mean()
+            metrics['dvh/bladder_v70_loss'] = loss_v70_bladder
+
+        # --- OAR Dmean losses ---
+        # Soft penalty if pred Dmean > target Dmean
+
+        for oar_name in ['Rectum', 'Bladder', 'Bowel']:
+            if masks[oar_name].any():
+                pred_dmean = self.compute_dmean(pred, masks[oar_name])
+                target_dmean = self.compute_dmean(target, masks[oar_name])
+
+                # Only penalize if prediction is higher than target
+                dmean_excess = F.relu(pred_dmean - target_dmean)
+                loss_dmean = dmean_excess.mean()
+
+                total_loss = total_loss + self.dmean_weight * loss_dmean
+                metrics[f'dvh/{oar_name.lower()}_dmean_pred'] = pred_dmean.mean()
+                metrics[f'dvh/{oar_name.lower()}_dmean_target'] = target_dmean.mean()
+                metrics[f'dvh/{oar_name.lower()}_dmean_loss'] = loss_dmean
+
+        metrics['dvh/total_loss'] = total_loss
+
+        return total_loss, metrics
+
+
 class BaselineUNet3D(nn.Module):
     """
     3D U-Net for direct dose regression.
@@ -562,6 +904,13 @@ class BaselineDosePredictor(pl.LightningModule):
         use_vgg_loss: bool = False,
         vgg_loss_weight: float = 0.001,
         vgg_slice_stride: int = 8,
+        # DVH loss options
+        use_dvh_loss: bool = False,
+        dvh_loss_weight: float = 0.5,
+        dvh_d95_weight: float = 10.0,
+        dvh_vx_weight: float = 2.0,
+        dvh_dmean_weight: float = 1.0,
+        dvh_temperature: float = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -576,6 +925,16 @@ class BaselineDosePredictor(pl.LightningModule):
         # Initialize perceptual loss modules
         self.gradient_loss = GradientLoss3D() if use_gradient_loss else None
         self.vgg_loss = VGGPerceptualLoss2D(slice_stride=vgg_slice_stride) if use_vgg_loss else None
+
+        # Initialize DVH loss
+        self.dvh_loss = DVHAwareLoss(
+            rx_dose_gy=rx_dose_gy,
+            d95_temperature=dvh_temperature,
+            vx_temperature=dvh_temperature * 10,  # Vx needs softer temperature
+            d95_weight=dvh_d95_weight,
+            vx_weight=dvh_vx_weight,
+            dmean_weight=dvh_dmean_weight,
+        ) if use_dvh_loss else None
 
         self.validation_step_outputs = []
     
@@ -615,6 +974,15 @@ class BaselineDosePredictor(pl.LightningModule):
             total_loss = total_loss + self.hparams.vgg_loss_weight * vgg_loss
             self.log('train/vgg_loss', vgg_loss, on_step=False, on_epoch=True)
 
+        # Optional: DVH-aware loss
+        if self.dvh_loss is not None:
+            dvh_loss, dvh_metrics = self.dvh_loss(pred_dose, dose, condition)
+            total_loss = total_loss + self.hparams.dvh_loss_weight * dvh_loss
+            self.log('train/dvh_loss', dvh_loss, on_step=False, on_epoch=True)
+            # Log individual DVH metrics
+            for metric_name, metric_value in dvh_metrics.items():
+                self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
+
         self.log('train/loss', total_loss, prog_bar=True, on_step=True, on_epoch=True)
 
         return total_loss
@@ -635,7 +1003,14 @@ class BaselineDosePredictor(pl.LightningModule):
         rx = self.hparams.rx_dose_gy
         mae_gy = F.l1_loss(pred_dose * rx, dose * rx)
         self.log('val/mae_gy', mae_gy, prog_bar=True, on_epoch=True)
-        
+
+        # DVH metrics for validation
+        if self.dvh_loss is not None:
+            with torch.no_grad():
+                _, dvh_metrics = self.dvh_loss(pred_dose, dose, condition)
+                for metric_name, metric_value in dvh_metrics.items():
+                    self.log(f'val/{metric_name}', metric_value, on_epoch=True)
+
         # Store for gamma computation
         if batch_idx == 0:
             self.validation_step_outputs.append({
@@ -941,6 +1316,20 @@ def main():
     parser.add_argument('--vgg_slice_stride', type=int, default=8,
                         help='Process every Nth slice for VGG loss (default: 8)')
 
+    # DVH loss options
+    parser.add_argument('--use_dvh_loss', action='store_true',
+                        help='Enable DVH-aware loss for clinical metrics optimization')
+    parser.add_argument('--dvh_loss_weight', type=float, default=0.5,
+                        help='Overall weight for DVH loss (default: 0.5)')
+    parser.add_argument('--dvh_d95_weight', type=float, default=10.0,
+                        help='Weight for PTV D95 penalties within DVH loss (default: 10.0)')
+    parser.add_argument('--dvh_vx_weight', type=float, default=2.0,
+                        help='Weight for OAR Vx constraint penalties within DVH loss (default: 2.0)')
+    parser.add_argument('--dvh_dmean_weight', type=float, default=1.0,
+                        help='Weight for OAR Dmean penalties within DVH loss (default: 1.0)')
+    parser.add_argument('--dvh_temperature', type=float, default=0.1,
+                        help='Temperature for soft DVH approximations (default: 0.1)')
+
     args = parser.parse_args()
 
     # Validate data_dir
@@ -1044,6 +1433,13 @@ def main():
         use_vgg_loss=args.use_vgg_loss,
         vgg_loss_weight=args.vgg_loss_weight,
         vgg_slice_stride=args.vgg_slice_stride,
+        # DVH loss options
+        use_dvh_loss=args.use_dvh_loss,
+        dvh_loss_weight=args.dvh_loss_weight,
+        dvh_d95_weight=args.dvh_d95_weight,
+        dvh_vx_weight=args.dvh_vx_weight,
+        dvh_dmean_weight=args.dvh_dmean_weight,
+        dvh_temperature=args.dvh_temperature,
     )
 
     param_count = sum(p.numel() for p in model.parameters())
@@ -1058,6 +1454,10 @@ def main():
         print(f"  Gradient loss (3D Sobel): weight={args.gradient_loss_weight}")
     if args.use_vgg_loss:
         print(f"  VGG perceptual loss: weight={args.vgg_loss_weight}, slice_stride={args.vgg_slice_stride}")
+    if args.use_dvh_loss:
+        print(f"  DVH-aware loss: weight={args.dvh_loss_weight}")
+        print(f"    D95 weight: {args.dvh_d95_weight}, Vx weight: {args.dvh_vx_weight}, Dmean weight: {args.dvh_dmean_weight}")
+        print(f"    Temperature: {args.dvh_temperature}")
     
     # Callbacks
     callbacks = [
