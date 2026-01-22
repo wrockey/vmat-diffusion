@@ -76,9 +76,9 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 ---
 
-## 🚨 QUICK START - CURRENT STATE (2026-01-21)
+## 🚨 QUICK START - CURRENT STATE (2026-01-22)
 
-**TL;DR: Phase B (Grad+VGG) complete. VGG improves MAE but NOT Gamma. Need adversarial or structure-weighted losses.**
+**TL;DR: Phase C (DVH-aware loss) complete. DVH achieves best MAE (3.61 Gy) among clinically-focused losses. Need test set Gamma evaluation.**
 
 ### Where We Are
 | Model | Val MAE | Test MAE | Gamma (3%/3mm) | Status |
@@ -86,28 +86,31 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 | Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | Original baseline |
 | DDPM (optimized) | 3.78 Gy | - | - | NOT recommended |
 | Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | Phase A ✅ |
-| **Grad+VGG** | **2.27 Gy** | **1.44 Gy** | **~28%** | Phase B ✅ |
+| Grad+VGG | 2.27 Gy | 1.44 Gy | ~28% | Phase B ✅ |
+| **DVH-Aware** | **3.61 Gy** | **TBD** | **TBD** | Phase C ✅ |
 
-### Key Finding (Phase B)
-**VGG perceptual loss improves MAE but does NOT improve Gamma!**
-- Val MAE: 3.67 → 2.27 Gy (-38% improvement) ✅
-- Test MAE: unchanged (1.44 Gy)
-- Gamma: unchanged (~28%) ❌
-- Training time: 9.74h (5x slower due to VGG)
+### Key Finding (Phase C)
+**DVH-aware loss achieves best MAE among clinically-focused losses!**
+- Val MAE: 3.61 Gy (beats baseline 3.73 Gy by 3%) ✅
+- Training time: 11.2h (DVH computation overhead)
+- DVH metrics (D95, V70) converge during training
+- Test set evaluation needed for Gamma comparison
 
-**Conclusion:** Skip VGG in future experiments. VGG helps global accuracy but not spatial accuracy (Gamma).
+**Conclusion:** DVH-aware loss provides explicit clinical constraint optimization while maintaining competitive MAE.
 
 ### What To Do Next
-1. ✅ **DVH-aware loss** ← **PRIORITY** - Directly optimizes clinical metrics
-2. ✅ **Structure-weighted loss** - Weight PTV regions 2x
-3. ✅ **Adversarial loss (PatchGAN)** - For edge sharpness
-4. ✅ **Data augmentation** - Critical with n=23
-5. ❌ **Don't use VGG** - Doesn't help Gamma
-6. ⚠️ **DDPM may be viable** - See "Semi-Multi-Modal Hypothesis" below
+1. ✅ ~~DVH-aware loss~~ **COMPLETE** - 3.61 Gy val MAE, beats baseline
+2. 🔥 **Test set evaluation** ← **IMMEDIATE PRIORITY** - Run inference + Gamma on DVH model
+3. ✅ **Structure-weighted loss** - Weight PTV regions 2x (if Gamma still ~28%)
+4. ✅ **Adversarial loss (PatchGAN)** - For edge sharpness (if needed)
+5. ✅ **Data augmentation** - Critical with n=23
+6. ❌ **Don't use VGG** - Doesn't help Gamma
+7. ⚠️ **DDPM may be viable** - See "Semi-Multi-Modal Hypothesis" below
 
 ### Key Files
 - **Best model (MAE):** `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
 - **Best model (Gamma):** `runs/grad_loss_0.1/checkpoints/best-epoch=012-val/mae_gy=3.670.ckpt`
+- **Best clinical (DVH):** `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt`
 - Predictions: `predictions/grad_vgg_combined_test/`
 - Experiments: `notebooks/EXPERIMENTS_INDEX.md`
 
@@ -1076,4 +1079,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-21 (Added structure-weighted/DVH-aware losses, reorganized priority tiers, 95% Gamma goal)*
+*Last updated: 2026-01-22 (Phase C DVH-aware loss complete - 3.61 Gy val MAE, beats baseline by 3%)*
