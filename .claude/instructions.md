@@ -103,31 +103,59 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 **Conclusion:** DVH and structure-weighted losses may be complementary. Consider combining for best of both worlds.
 
+### 🚨 CRITICAL INSIGHT: Is Gamma the Right Metric? (2026-01-23)
+
+**Hypothesis:** Overall Gamma may be the WRONG metric for evaluating dose prediction quality.
+
+**The Problem:**
+- Gamma measures similarity to ONE specific reference plan
+- But MULTIPLE dose distributions could be clinically valid and physically deliverable
+- Each training case has different (but valid) low-dose patterns in "no-man's land"
+- Our model predicts the AVERAGE → blurred → low Gamma, even if clinically acceptable
+
+**What Actually Matters:**
+| Metric | Clinical Relevance | Priority |
+|--------|-------------------|----------|
+| PTV D95 ≥ 95% Rx | Target coverage | **CRITICAL** |
+| OAR Vx, Dmean constraints | Organ protection | **CRITICAL** |
+| PTV-only Gamma | Accuracy where it matters | **HIGH** |
+| Overall Gamma | Match specific reference | **QUESTIONABLE** |
+| Physical deliverability | Can MLC create this? | **HIGH** (hard to measure) |
+
+**Implication for DDPM:** If dose is inherently multi-modal (many valid solutions), generative models (DDPM, Flow Matching) might be BETTER than deterministic U-Net because they can sample ONE valid solution rather than averaging.
+
+**Testing This Hypothesis:** See `notebooks/2026-01-23_gamma_metric_analysis.ipynb`
+
 ### What To Do Next
 
-**🎯 STRATEGY: Wait for more training data (100+ cases expected soon). Run refinement experiments in meantime.**
+**🎯 STRATEGY: Test metric hypothesis FIRST, then decide on path forward.**
 
-#### Immediate (Before More Data)
-1. ✅ **Structure-weighted loss** - COMPLETE (31.2% Gamma)
-2. 🔥 **Combined DVH + Structure-weighted** ← **NEXT** - Try combining both losses
-3. 🔬 **Region-specific Gamma analysis** - Understand where errors concentrate
-4. 🔬 **Full 3D Gamma (subsample=1)** - More accurate metrics
+#### 🔥 IMMEDIATE PRIORITY: Metric Analysis
+1. 🔥 **DVH Clinical Acceptability** ← **NOW** - Do predictions pass clinical constraints?
+2. 🔥 **PTV-Only Gamma** ← **NOW** - Is model accurate where it matters?
+3. 🔬 **Gradient Plausibility** - Are dose gradients physically realistic?
+
+**Key Question:** If DVH constraints pass and PTV Gamma is high, do we have a REAL problem or a METRIC problem?
+
+#### Previously Planned (On Hold Pending Analysis)
+- Combined DVH + Structure-weighted loss
+- Region-specific Gamma analysis (full)
+- Full 3D Gamma (subsample=1)
 
 #### When 100+ Cases Arrive
-4. 📊 **Retrain DVH model on full dataset** - Expected significant Gamma improvement
-5. 📊 **Retrain structure-weighted model** - Compare approaches at scale
-6. **Data augmentation** - Add on top of larger dataset if needed
+- Retrain best model on full dataset
+- Re-evaluate with corrected metrics
 
-#### If Gamma Still <50% After More Data
-7. **Adversarial loss (PatchGAN)** - For edge sharpness
-8. **Attention U-Net** - Architecture improvement
-9. **Deeper architecture** - 96 base channels
+#### If Problem is Real (Not Just Metrics)
+- Adversarial loss (PatchGAN) for edge sharpness
+- Attention U-Net architecture
+- **Revisit DDPM/Flow Matching** - may be appropriate if dose is multi-modal
 
 #### Don't Use
 - ❌ **VGG perceptual loss** - Doesn't help Gamma
-- ❌ **DDPM** - Not recommended for deterministic dose prediction
+- ⚠️ **DDPM** - Previously not recommended, but MAY be appropriate if multi-modal hypothesis confirmed
 
-**Key Insight:** The ~28% Gamma ceiling with 23 cases likely reflects data limitation, not model limitation. Literature shows 85-95% Gamma requires 100-500 cases.
+**Previous Insight (Still Valid):** The ~31% Gamma ceiling with 23 cases likely reflects data limitation. But we must first determine if Gamma is even the right metric to optimize.
 
 ### Key Files
 - **Best overall model:** `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt`
