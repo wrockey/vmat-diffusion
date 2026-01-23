@@ -99,15 +99,29 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 **Conclusion:** DVH-aware loss is the best model so far, achieving both MAE and Gamma improvements.
 
 ### What To Do Next
-1. ✅ ~~DVH-aware loss~~ **COMPLETE** - Test MAE 0.95 Gy, Gamma 27.7%
-2. ✅ ~~Test set evaluation~~ **COMPLETE** - Best results!
-3. 🔥 **Data augmentation** ← **NEXT PRIORITY** - Critical with n=23 cases (torchio)
-4. 🔥 **Structure-weighted loss** - Weight PTV regions 2x for D95 improvement
-5. **Adversarial loss (PatchGAN)** - For edge sharpness (if augmentation insufficient)
-6. **Deeper architecture** - 96 base channels or attention gates
-7. ❌ **Don't use VGG** - Doesn't help Gamma
 
-**Gamma ~28% ceiling insight:** Loss function improvements alone cannot reach 95% target. Need more data, augmentation, or architecture changes.
+**🎯 STRATEGY: Wait for more training data (100+ cases expected soon). Run refinement experiments in meantime.**
+
+#### Immediate (Before More Data)
+1. 🔥 **Structure-weighted loss** ← **NEXT** - Weight PTV 2x, OAR boundaries 1.5x
+2. 🔬 **Region-specific Gamma analysis** - Understand where errors concentrate (PTV vs OAR vs flexible)
+3. 🔬 **Full 3D Gamma (subsample=1)** - More accurate metrics on current models
+
+#### When 100+ Cases Arrive
+4. 📊 **Retrain DVH model on full dataset** - Expected significant Gamma improvement
+5. 📊 **Retrain structure-weighted model** - Compare approaches at scale
+6. **Data augmentation** - Add on top of larger dataset if needed
+
+#### If Gamma Still <50% After More Data
+7. **Adversarial loss (PatchGAN)** - For edge sharpness
+8. **Attention U-Net** - Architecture improvement
+9. **Deeper architecture** - 96 base channels
+
+#### Don't Use
+- ❌ **VGG perceptual loss** - Doesn't help Gamma
+- ❌ **DDPM** - Not recommended for deterministic dose prediction
+
+**Key Insight:** The ~28% Gamma ceiling with 23 cases likely reflects data limitation, not model limitation. Literature shows 85-95% Gamma requires 100-500 cases.
 
 ### Key Files
 - **Best overall model:** `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt`
@@ -298,72 +312,71 @@ Success criteria:
 
 **PRIMARY GOAL: Achieve 95% Gamma (3%/3mm) pass rate for clinical deployment.**
 
-Current status: ~28% Gamma (Phase A & B - VGG didn't help)
+Current status: **~28% Gamma** (Phase C complete - DVH best MAE but Gamma same as grad loss)
 
 ```
-Phase B Result: Gamma ≈ 28% (VGG doesn't help) ✅ CONFIRMED
+Phase C Result: Gamma ≈ 28% (DVH gives best MAE but same Gamma) ✅ CONFIRMED
 │
-├── IMMEDIATE: DVH-Aware Loss (Phase C)
-│   │
-│   ├── IF Gamma ≥ 50%: DVH approach working!
-│   │   ├── Add structure-weighted loss
-│   │   ├── Tune DVH weights
-│   │   └── Consider revisiting DDPM with DVH metrics
-│   │
-│   ├── IF Gamma 35-50%: Partial improvement
-│   │   ├── Add structure-weighted loss
-│   │   ├── Try adversarial loss
-│   │   └── Analyze region-specific Gamma
-│   │
-│   └── IF Gamma ≈ 28%: DVH alone insufficient
-│       ├── Add adversarial loss (PatchGAN)
-│       ├── Try structure-weighted loss
-│       └── Consider physics-bounded DDPM
+├── DIAGNOSIS: Why ~28% ceiling?
+│   ├── Small dataset (n=23) limits generalization
+│   ├── Model learns "average" dose patterns → blurring
+│   └── Literature: 85-95% Gamma requires 100-500 cases
 │
-├── PARALLEL: Validate Semi-Multi-Modal Hypothesis
-│   ├── Analyze ground-truth low-dose variability
-│   ├── Compute region-specific Gamma (PTV vs no-man's land)
-│   └── Document findings for publication
+├── CURRENT STRATEGY: Wait for More Data (100+ cases coming soon)
+│   │
+│   ├── MEANWHILE: Refinement experiments
+│   │   ├── Structure-weighted loss (focus errors on PTV) ← NEXT
+│   │   ├── Region-specific Gamma analysis (diagnostic)
+│   │   └── Full 3D Gamma evaluation (accurate metrics)
+│   │
+│   └── WHEN DATA ARRIVES:
+│       ├── Retrain DVH model on 100+ cases
+│       ├── Retrain structure-weighted model
+│       └── Expected: Significant Gamma improvement
 │
-└── FALLBACK: Physics-Bounded DDPM (if baseline plateaus)
-    ├── Only if DVH + structure-weighted + adversarial < 50% Gamma
-    ├── Implement region-aware losses
-    └── Add physics surrogates (falloff, homogeneity)
+├── IF GAMMA STILL <50% AFTER MORE DATA:
+│   ├── Add adversarial loss (PatchGAN)
+│   ├── Try attention U-Net architecture
+│   ├── Deeper network (96 channels)
+│   └── Data augmentation on top of larger dataset
+│
+└── PARKING LOT (not pursuing now):
+    ├── DDPM - Not recommended for deterministic dose
+    ├── VGG loss - Doesn't help Gamma
+    └── Physics-bounded approaches - Only if above fails
 ```
 
-### Experiment Priority Queue (Updated 2026-01-21)
+### Experiment Priority Queue (Updated 2026-01-22)
 
 **📋 AUTHORITATIVE TODO: See `notebooks/EXPERIMENTS_INDEX.md` for full experiment tracking.**
 
-**Phase B Complete:** VGG doesn't help Gamma. Skip VGG, proceed with DVH-aware and structure-weighted losses.
+**Phase C Complete:** DVH-aware loss achieves best test MAE (0.95 Gy) but Gamma still ~28%. Waiting for more data.
 
-**Tier 1 - Loss Function Improvements (highest impact expected):**
-1. ~~`grad_vgg_combined`~~ ✅ Phase B Complete - VGG doesn't help Gamma
-2. **`dvh_aware_loss`** ← **NEXT PRIORITY** - Directly optimizes clinical metrics (D95, Dmean, Vx)
-3. **`structure_weighted_loss`** - Weight MSE by clinical importance (2x PTV, 1.5x OAR boundaries)
-4. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
-5. `grad_loss_sweep` - Tune gradient weight (0.05, 0.1, 0.2) - lower priority now
-6. ~~`vgg_loss_sweep`~~ - Skip (VGG doesn't help Gamma)
-7. `combined_optimal` - Best losses combined (after individual testing)
+#### NOW: Refinement Experiments (Before More Data)
+1. **`structure_weighted_loss`** ← **NEXT** - Weight MSE by clinical importance (2x PTV, 1.5x OAR boundaries)
+2. **`region_specific_gamma`** 🔬 - Diagnostic: where are Gamma failures? (PTV vs OAR vs flexible)
+3. **`full_3d_gamma`** 🔬 - Accurate metrics with subsample=1 on current models
 
-**Tier 2 - Data & Augmentation (critical with n=23):**
-8. `augmentation_v1` - Add torchio augmentations (rotations ±10°, intensity shifts, noise)
-9. `collect_100_cases` - More training data (currently 23 cases)
-10. `full_3d_gamma` - Compute proper 3D Gamma (not just central slice)
+#### WAITING: More Training Data (100+ cases expected soon)
+4. ⏳ `retrain_dvh_100cases` - Retrain DVH model on larger dataset
+5. ⏳ `retrain_structure_weighted_100cases` - Compare at scale
+6. ⏳ `augmentation_v1` - Add torchio augmentations ON TOP of larger dataset (not instead of)
 
-**Tier 3 - Architecture Improvements:**
-11. `attention_unet` - Add attention gates to U-Net
-12. `deeper_unet` - Increase model capacity (96 base channels, dropout 0.1-0.2)
-13. `nnunet_baseline` - Try nnU-Net architecture
-14. `swin_unetr` - Transformer-based architecture
+#### IF NEEDED: After More Data (if Gamma still <50%)
+7. `adversarial_loss` - Add PatchGAN discriminator for sharper edges
+8. `attention_unet` - Add attention gates to U-Net
+9. `deeper_unet` - Increase model capacity (96 base channels)
+10. `combined_optimal` - Best losses combined
 
-**Tier 4 - Alternative Approaches:**
-15. `flow_matching_v1` - Simpler than diffusion, may work better
-16. `ensemble_models` - Combine multiple models
+#### COMPLETED ✅
+- ~~`grad_loss_0.1`~~ ✅ Phase A - Gamma 27.9%
+- ~~`grad_vgg_combined`~~ ✅ Phase B - VGG doesn't help Gamma
+- ~~`dvh_aware_loss`~~ ✅ Phase C - Best MAE (0.95 Gy), Gamma 27.7%
 
-**Tier 5 - Post-95% Gamma (future):**
-17. `physics_constraints` - Monte Carlo surrogate loss for deliverability
-18. `mlc_prediction` - Phase 2: MLC/arc sequence prediction
+#### NOT PURSUING ❌
+- ~~`vgg_loss_sweep`~~ - VGG doesn't help Gamma
+- ~~`ddpm_*`~~ - DDPM not recommended for deterministic dose
+- ~~`grad_loss_sweep`~~ - Gradient weight 0.1 is good enough
 
 ### Gamma Milestones
 
@@ -1081,4 +1094,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-22 (Phase C FULLY COMPLETE - Test MAE 0.95 Gy (best!), Gamma 27.7%)*
+*Last updated: 2026-01-22 (Updated path forward: waiting for 100+ cases, structure-weighted loss next)*

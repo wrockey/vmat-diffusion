@@ -171,13 +171,41 @@ Examples:
 
 **🎯 GOAL: Achieve 95% Gamma (3%/3mm) for clinical deployment.**
 
-Current: ~28% Gamma (Phase A & B) → Target: 95% Gamma
+Current: **~28% Gamma** (Phases A, B, C complete) → Target: 95% Gamma
 
-**Key insight (Phase B):** VGG perceptual loss does NOT improve Gamma. Need DVH-aware or structure-weighted losses.
+---
 
-**🔬 NEW: Semi-Multi-Modal Hypothesis (2026-01-21)**
+## 📊 CURRENT STRATEGY (2026-01-22)
 
-Dose prediction may be semi-multi-modal: PTV/OAR regions are deterministic, but low/intermediate dose "spray" in no-man's land is flexible. Multiple valid solutions exist if DVH constraints are met. This reframes DDPM as potentially viable with proper metrics. See `notebooks/2026-01-21_semi_multi_modal_hypothesis.ipynb` for analysis.
+### Key Finding: ~28% Gamma Ceiling with 23 Cases
+
+After three phases of loss function experiments, Gamma remains at ~28%:
+- Phase A (Gradient Loss): 27.9% ✅
+- Phase B (Grad+VGG): ~28% (VGG doesn't help) ❌
+- Phase C (DVH-Aware): 27.7% (best MAE: 0.95 Gy) ✅
+
+**Diagnosis:** The ~28% ceiling likely reflects **data limitation** (n=23), not model limitation.
+- Literature shows 85-95% Gamma requires 100-500 cases
+- Models learn "average" dose patterns → blurring
+- Loss function refinements help MAE but not Gamma
+
+### Strategy: Wait for More Data
+
+**100+ cases expected soon.** Plan:
+
+| Phase | Action | Status |
+|-------|--------|--------|
+| **NOW** | Structure-weighted loss experiment | 🔥 NEXT |
+| **NOW** | Region-specific Gamma analysis (diagnostic) | Planned |
+| **WAIT** | Retrain on 100+ cases | ⏳ Awaiting data |
+| **WAIT** | Data augmentation (on top of larger dataset) | ⏳ Deferred |
+| **IF NEEDED** | Adversarial loss, attention U-Net | After more data |
+
+---
+
+**🔬 Semi-Multi-Modal Hypothesis (2026-01-21)**
+
+Dose prediction may be semi-multi-modal: PTV/OAR regions are deterministic, but low/intermediate dose "spray" in no-man's land is flexible. Multiple valid solutions exist if DVH constraints are met. See `notebooks/2026-01-21_semi_multi_modal_hypothesis.ipynb` for analysis.
 
 #### Phase A: Gradient Loss ✅ COMPLETE
 - [x] ~~grad_loss_0.1~~ ✅ **COMPLETE** (gradient loss only, weight=0.1)
@@ -195,22 +223,35 @@ Dose prediction may be semi-multi-modal: PTV/OAR regions are deterministic, but 
   - Best checkpoint: `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt`
   - **Conclusion: VGG improves MAE but NOT Gamma. Skip VGG in future experiments.** ❌
 
-#### Phase C: DVH-Aware & Structure-Weighted Losses
+#### Phase C: DVH-Aware Loss ✅ COMPLETE (Including Test Evaluation)
 - [x] ~~**dvh_aware_loss**~~ ✅ **COMPLETE** (differentiable DVH metrics)
   - Penalize if PTV D95 < prescription dose
   - Penalize if OAR Dmean > constraint
-  - **Results:** Val MAE **3.61 Gy** (epoch 86), beats baseline (3.73 Gy) by 3%
+  - **Training Results:** Val MAE **3.61 Gy** (epoch 86), beats baseline by 3%
+  - **Test Results:** MAE **0.95 Gy** (best!), Gamma **27.7%** (matches best)
   - Training time: 11.2 hours (DVH computation adds overhead)
-  - DVH metrics converge - model learns to respect D95 and V70 constraints
-  - **Conclusion:** DVH-aware loss achieves best MAE among clinically-focused losses ✅
+  - **Conclusion:** Best overall model! Best MAE + good Gamma ✅
   - Best checkpoint: `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt`
-- [ ] **structure_weighted_loss** ⭐ HIGH PRIORITY (weight MSE by clinical importance)
+  - Test results: `predictions/dvh_aware_loss_test/evaluation_results.json`
+
+#### Phase D: Structure-Weighted Loss ← NEXT
+- [ ] **structure_weighted_loss** 🔥 **NEXT EXPERIMENT** (weight MSE by clinical importance)
   - 2x weight for PTV70/PTV56 regions
   - 1.5x weight for OAR boundaries (via SDF gradients)
   - 0.5x weight in "no-man's land" (flexible regions)
   - Rationale: Addresses D95 underdosing (-10 to -22 Gy error seen in baseline)
   - Implementation: Multiply MSE by mask weights before reduction
-- [ ] grad_loss_sweep (tune gradient_loss_weight: 0.05, 0.1, 0.2) - lower priority
+  - Can stack with DVH-aware loss
+
+#### Diagnostic Experiments (Before More Data)
+- [ ] **region_specific_gamma** 🔬 DIAGNOSTIC (understand error distribution)
+  - Compute Gamma separately for PTV, OAR, and flexible regions
+  - Understand where prediction errors concentrate
+  - May reveal if Gamma failures are in flexible regions (acceptable) vs PTV (not acceptable)
+- [ ] **full_3d_gamma** 🔬 (accurate metrics with subsample=1)
+
+#### Skipped/Deferred
+- [ ] ~~grad_loss_sweep~~ - Gradient weight 0.1 works well, not priority
 - [ ] ~~vgg_loss_sweep~~ - SKIP (VGG doesn't help Gamma)
 
 #### Phase D: Adversarial Training
@@ -243,15 +284,26 @@ Dose prediction may be semi-multi-modal: PTV/OAR regions are deterministic, but 
 - `--vgg_slice_stride 8` - Process every Nth slice for VGG (default: 8)
 - *TODO: Add `--use_structure_weighted`, `--use_dvh_loss`, `--use_adversarial`*
 
-### 1b. Data & Augmentation (Tier 2 Priority - Critical with n=23)
+### 1b. Data & Augmentation
 
-- [ ] **augmentation_v1** ⭐ NEW (torchio augmentations)
-  - Random affine transforms (rotations ±10°, shears)
-  - Intensity shifts on CT (HU ±50)
-  - Gaussian noise on doses (σ=0.01)
-  - Use `torchio` or `SimpleITK` for implementation
-  - Rationale: With only 23 cases, models overfit to averages (causing blurring)
-- [ ] collect_100_cases (more training data when available)
+**⏳ WAITING FOR MORE DATA (100+ cases expected soon)**
+
+Real data is preferred over augmentation:
+- Preserves physics and beam constraints
+- Real anatomical diversity
+- No synthetic artifacts
+
+| Experiment | Status | Notes |
+|------------|--------|-------|
+| `collect_100_cases` | ⏳ **EXPECTED SOON** | Primary path to 95% Gamma |
+| `retrain_dvh_100cases` | ⏳ Waiting | Retrain best model on larger dataset |
+| `augmentation_v1` | ⏳ **DEFERRED** | Use on top of larger dataset, not instead of |
+
+**When 100+ cases arrive:**
+1. Preprocess new cases with existing pipeline
+2. Update train/val/test splits
+3. Retrain DVH model (and structure-weighted if implemented)
+4. Expect significant Gamma improvement
 - [ ] full_3d_gamma (compute proper 3D Gamma, not just central slice)
   - Current evaluation underestimates true performance
   - Use pymedphys with subsample=1 for accuracy
@@ -347,4 +399,4 @@ For each experiment to be publication-ready:
 
 ---
 
-*Last updated: 2026-01-22 (DVH-aware loss COMPLETE - Test MAE 0.95 Gy (best!), Gamma 27.7%)*
+*Last updated: 2026-01-22 (Updated strategy: waiting for 100+ cases, structure-weighted loss next)*
