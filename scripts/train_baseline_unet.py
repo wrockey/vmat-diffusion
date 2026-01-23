@@ -784,6 +784,173 @@ class DVHAwareLoss(nn.Module):
         return total_loss, metrics
 
 
+class StructureWeightedLoss(nn.Module):
+    """
+    Structure-weighted MSE loss for VMAT dose prediction.
+
+    Weights errors by clinical importance:
+    - High weight (2x) for PTV regions where accurate dosing is critical
+    - Medium weight (1.5x) for OAR boundaries where sharp gradients matter
+    - Low weight (0.5x) for "no-man's land" where dose is more flexible
+
+    This focuses the model's learning capacity on clinically important regions
+    while allowing more flexibility in areas between targets and OARs.
+    """
+
+    def __init__(
+        self,
+        ptv_weight: float = 2.0,
+        oar_boundary_weight: float = 1.5,
+        background_weight: float = 0.5,
+        boundary_width_mm: float = 5.0,
+        voxel_size_mm: float = 2.5,
+    ):
+        """
+        Args:
+            ptv_weight: Weight multiplier for PTV regions (default: 2.0)
+            oar_boundary_weight: Weight for OAR boundary regions (default: 1.5)
+            background_weight: Weight for "no-man's land" (default: 0.5)
+            boundary_width_mm: Width of OAR boundary region in mm (default: 5.0)
+            voxel_size_mm: Voxel size for SDF interpretation (default: 2.5)
+        """
+        super().__init__()
+        self.ptv_weight = ptv_weight
+        self.oar_boundary_weight = oar_boundary_weight
+        self.background_weight = background_weight
+        # Convert boundary width from mm to normalized SDF units
+        # SDF values are typically in voxel units
+        self.boundary_threshold = boundary_width_mm / voxel_size_mm
+
+    def extract_masks(self, condition: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Extract structure masks from condition tensor SDFs.
+
+        Args:
+            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+
+        Returns:
+            Dict mapping structure names to masks/SDFs
+        """
+        masks = {}
+        sdfs = {}
+        structure_names = ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder',
+                          'Femur_L', 'Femur_R', 'Bowel']
+
+        for idx, name in enumerate(structure_names):
+            # SDF channels start at index 1 (index 0 is CT)
+            sdf = condition[:, idx + 1, :, :, :]
+            masks[name] = sdf < 0  # Inside structure where SDF is negative
+            sdfs[name] = sdf
+
+        return masks, sdfs
+
+    def compute_weight_map(
+        self,
+        condition: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute per-voxel weight map based on structure locations.
+
+        Priority (highest wins):
+        1. PTV regions → ptv_weight
+        2. OAR boundaries → oar_boundary_weight
+        3. Everything else → background_weight
+
+        Args:
+            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+
+        Returns:
+            (B, 1, H, W, D) weight map
+        """
+        B, _, H, W, D = condition.shape
+        device = condition.device
+        dtype = condition.dtype
+
+        # Start with background weight everywhere
+        weight_map = torch.full((B, 1, H, W, D), self.background_weight,
+                                device=device, dtype=dtype)
+
+        masks, sdfs = self.extract_masks(condition)
+
+        # OAR boundaries: |SDF| < threshold (near the surface)
+        oar_names = ['Rectum', 'Bladder', 'Bowel', 'Femur_L', 'Femur_R']
+        for oar_name in oar_names:
+            sdf = sdfs[oar_name]
+            # Near boundary: |SDF| < threshold
+            near_boundary = torch.abs(sdf) < self.boundary_threshold
+            weight_map[:, 0] = torch.where(
+                near_boundary,
+                torch.full_like(weight_map[:, 0], self.oar_boundary_weight),
+                weight_map[:, 0]
+            )
+
+        # PTVs have highest priority (overwrite everything)
+        for ptv_name in ['PTV70', 'PTV56']:
+            ptv_mask = masks[ptv_name]
+            weight_map[:, 0] = torch.where(
+                ptv_mask,
+                torch.full_like(weight_map[:, 0], self.ptv_weight),
+                weight_map[:, 0]
+            )
+
+        return weight_map
+
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute structure-weighted MSE loss.
+
+        Args:
+            pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
+            target: (B, 1, H, W, D) target dose (normalized 0-1)
+            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+
+        Returns:
+            Tuple of (weighted_mse_loss, metrics_dict)
+        """
+        # Compute weight map
+        weight_map = self.compute_weight_map(condition)
+
+        # Squared error
+        squared_error = (pred - target) ** 2
+
+        # Weighted MSE
+        weighted_mse = (weight_map * squared_error).mean()
+
+        # Compute metrics for logging
+        metrics = {}
+        masks, _ = self.extract_masks(condition)
+
+        # PTV region error
+        ptv_mask = masks['PTV70'] | masks['PTV56']
+        if ptv_mask.any():
+            ptv_mse = squared_error[:, 0][ptv_mask].mean()
+            metrics['struct_weight/ptv_mse'] = ptv_mse
+
+        # OAR region error
+        oar_mask = masks['Rectum'] | masks['Bladder'] | masks['Bowel']
+        if oar_mask.any():
+            oar_mse = squared_error[:, 0][oar_mask].mean()
+            metrics['struct_weight/oar_mse'] = oar_mse
+
+        # Background region error (everything not PTV or major OAR)
+        covered_mask = ptv_mask | oar_mask | masks['Prostate']
+        background_mask = ~covered_mask
+        if background_mask.any():
+            background_mse = squared_error[:, 0][background_mask].mean()
+            metrics['struct_weight/background_mse'] = background_mse
+
+        # Weight statistics
+        metrics['struct_weight/mean_weight'] = weight_map.mean()
+        metrics['struct_weight/weighted_loss'] = weighted_mse
+
+        return weighted_mse, metrics
+
+
 class BaselineUNet3D(nn.Module):
     """
     3D U-Net for direct dose regression.
@@ -911,6 +1078,13 @@ class BaselineDosePredictor(pl.LightningModule):
         dvh_vx_weight: float = 2.0,
         dvh_dmean_weight: float = 1.0,
         dvh_temperature: float = 0.1,
+        # Structure-weighted loss options
+        use_structure_weighted: bool = False,
+        structure_weighted_weight: float = 1.0,
+        structure_ptv_weight: float = 2.0,
+        structure_oar_boundary_weight: float = 1.5,
+        structure_background_weight: float = 0.5,
+        structure_boundary_width_mm: float = 5.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -935,6 +1109,14 @@ class BaselineDosePredictor(pl.LightningModule):
             vx_weight=dvh_vx_weight,
             dmean_weight=dvh_dmean_weight,
         ) if use_dvh_loss else None
+
+        # Initialize structure-weighted loss
+        self.structure_weighted_loss = StructureWeightedLoss(
+            ptv_weight=structure_ptv_weight,
+            oar_boundary_weight=structure_oar_boundary_weight,
+            background_weight=structure_background_weight,
+            boundary_width_mm=structure_boundary_width_mm,
+        ) if use_structure_weighted else None
 
         self.validation_step_outputs = []
     
@@ -981,6 +1163,15 @@ class BaselineDosePredictor(pl.LightningModule):
             self.log('train/dvh_loss', dvh_loss, on_step=False, on_epoch=True)
             # Log individual DVH metrics
             for metric_name, metric_value in dvh_metrics.items():
+                self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
+
+        # Optional: Structure-weighted loss
+        if self.structure_weighted_loss is not None:
+            struct_loss, struct_metrics = self.structure_weighted_loss(pred_dose, dose, condition)
+            total_loss = total_loss + self.hparams.structure_weighted_weight * struct_loss
+            self.log('train/struct_weighted_loss', struct_loss, on_step=False, on_epoch=True)
+            # Log individual structure metrics
+            for metric_name, metric_value in struct_metrics.items():
                 self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
 
         self.log('train/loss', total_loss, prog_bar=True, on_step=True, on_epoch=True)
@@ -1330,6 +1521,20 @@ def main():
     parser.add_argument('--dvh_temperature', type=float, default=0.1,
                         help='Temperature for soft DVH approximations (default: 0.1)')
 
+    # Structure-weighted loss options
+    parser.add_argument('--use_structure_weighted', action='store_true',
+                        help='Enable structure-weighted MSE loss (2x PTV, 1.5x OAR boundary)')
+    parser.add_argument('--structure_weighted_weight', type=float, default=1.0,
+                        help='Overall weight for structure-weighted loss (default: 1.0)')
+    parser.add_argument('--structure_ptv_weight', type=float, default=2.0,
+                        help='Weight multiplier for PTV regions (default: 2.0)')
+    parser.add_argument('--structure_oar_boundary_weight', type=float, default=1.5,
+                        help='Weight for OAR boundary regions (default: 1.5)')
+    parser.add_argument('--structure_background_weight', type=float, default=0.5,
+                        help='Weight for background/no-mans-land (default: 0.5)')
+    parser.add_argument('--structure_boundary_width_mm', type=float, default=5.0,
+                        help='Width of OAR boundary region in mm (default: 5.0)')
+
     args = parser.parse_args()
 
     # Validate data_dir
@@ -1440,6 +1645,13 @@ def main():
         dvh_vx_weight=args.dvh_vx_weight,
         dvh_dmean_weight=args.dvh_dmean_weight,
         dvh_temperature=args.dvh_temperature,
+        # Structure-weighted loss options
+        use_structure_weighted=args.use_structure_weighted,
+        structure_weighted_weight=args.structure_weighted_weight,
+        structure_ptv_weight=args.structure_ptv_weight,
+        structure_oar_boundary_weight=args.structure_oar_boundary_weight,
+        structure_background_weight=args.structure_background_weight,
+        structure_boundary_width_mm=args.structure_boundary_width_mm,
     )
 
     param_count = sum(p.numel() for p in model.parameters())
@@ -1458,6 +1670,10 @@ def main():
         print(f"  DVH-aware loss: weight={args.dvh_loss_weight}")
         print(f"    D95 weight: {args.dvh_d95_weight}, Vx weight: {args.dvh_vx_weight}, Dmean weight: {args.dvh_dmean_weight}")
         print(f"    Temperature: {args.dvh_temperature}")
+    if args.use_structure_weighted:
+        print(f"  Structure-weighted loss: weight={args.structure_weighted_weight}")
+        print(f"    PTV weight: {args.structure_ptv_weight}, OAR boundary: {args.structure_oar_boundary_weight}, Background: {args.structure_background_weight}")
+        print(f"    Boundary width: {args.structure_boundary_width_mm} mm")
     
     # Callbacks
     callbacks = [
