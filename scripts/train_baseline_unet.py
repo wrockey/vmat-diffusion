@@ -951,6 +951,130 @@ class StructureWeightedLoss(nn.Module):
         return weighted_mse, metrics
 
 
+class AsymmetricPTVLoss(nn.Module):
+    """
+    Asymmetric loss that penalizes PTV underdosing more heavily than overdosing.
+
+    Rationale:
+    - PTV underdose = treatment failure (tumor recurrence) - CRITICAL
+    - PTV slight overdose = acceptable (within tolerance)
+
+    The loss applies asymmetric weights in PTV regions:
+    - underdose (pred < target): weight = underdose_weight (default 3.0)
+    - overdose (pred > target): weight = overdose_weight (default 1.0)
+
+    This encourages the model to err on the side of slightly higher doses
+    in PTVs rather than underdosing.
+    """
+
+    def __init__(
+        self,
+        underdose_weight: float = 3.0,
+        overdose_weight: float = 1.0,
+        rx_dose_gy: float = 70.0,
+    ):
+        """
+        Args:
+            underdose_weight: Weight multiplier for underdosing (pred < target)
+            overdose_weight: Weight multiplier for overdosing (pred > target)
+            rx_dose_gy: Prescription dose for Gy conversion in metrics
+        """
+        super().__init__()
+        self.underdose_weight = underdose_weight
+        self.overdose_weight = overdose_weight
+        self.rx_dose_gy = rx_dose_gy
+
+    def extract_ptv_mask(self, condition: torch.Tensor) -> torch.Tensor:
+        """
+        Extract combined PTV mask from condition tensor SDFs.
+
+        Args:
+            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+
+        Returns:
+            (B, H, W, D) boolean mask for combined PTV70 + PTV56
+        """
+        # SDF channels: 1=PTV70, 2=PTV56 (0 is CT)
+        ptv70_mask = condition[:, 1, :, :, :] < 0
+        ptv56_mask = condition[:, 2, :, :, :] < 0
+        return ptv70_mask | ptv56_mask
+
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute asymmetric PTV loss.
+
+        Args:
+            pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
+            target: (B, 1, H, W, D) target dose (normalized 0-1)
+            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+
+        Returns:
+            Tuple of (asymmetric_loss, metrics_dict)
+        """
+        # Extract PTV mask
+        ptv_mask = self.extract_ptv_mask(condition)
+
+        # Compute error (positive = overdose, negative = underdose)
+        error = pred[:, 0] - target[:, 0]
+
+        # Asymmetric weights: higher weight for underdosing (error < 0)
+        weights = torch.where(
+            error < 0,
+            torch.full_like(error, self.underdose_weight),
+            torch.full_like(error, self.overdose_weight)
+        )
+
+        # Apply PTV mask and compute weighted squared error
+        squared_error = error ** 2
+        ptv_weighted_error = weights * squared_error * ptv_mask.float()
+
+        # Compute mean over PTV voxels only (avoid divide by zero)
+        n_ptv_voxels = ptv_mask.sum()
+        if n_ptv_voxels > 0:
+            asymmetric_loss = ptv_weighted_error.sum() / n_ptv_voxels
+        else:
+            asymmetric_loss = torch.tensor(0.0, device=pred.device, dtype=pred.dtype)
+
+        # Compute metrics for logging
+        metrics = {}
+        if n_ptv_voxels > 0:
+            # Error statistics in Gy
+            error_gy = error * self.rx_dose_gy
+            ptv_error_gy = error_gy[ptv_mask]
+            metrics['asym_ptv/mean_error_gy'] = ptv_error_gy.mean()
+            metrics['asym_ptv/min_error_gy'] = ptv_error_gy.min()  # Most underdosed
+            metrics['asym_ptv/max_error_gy'] = ptv_error_gy.max()  # Most overdosed
+
+            # Underdose statistics
+            underdose_mask = (error < 0) & ptv_mask
+            if underdose_mask.any():
+                metrics['asym_ptv/underdose_mean_gy'] = error_gy[underdose_mask].mean()
+                metrics['asym_ptv/underdose_fraction'] = underdose_mask.sum().float() / n_ptv_voxels
+
+            # D95 proxy (95th percentile of dose in PTV)
+            pred_gy = pred[:, 0] * self.rx_dose_gy
+            target_gy = target[:, 0] * self.rx_dose_gy
+            if ptv_mask.any():
+                # Compute D95 as the value at the 5th percentile when sorted descending
+                pred_ptv_sorted = torch.sort(pred_gy[ptv_mask], descending=True)[0]
+                target_ptv_sorted = torch.sort(target_gy[ptv_mask], descending=True)[0]
+                d95_idx = int(0.95 * len(pred_ptv_sorted))
+                if d95_idx < len(pred_ptv_sorted):
+                    metrics['asym_ptv/pred_d95_gy'] = pred_ptv_sorted[d95_idx]
+                    metrics['asym_ptv/target_d95_gy'] = target_ptv_sorted[d95_idx]
+                    metrics['asym_ptv/d95_gap_gy'] = target_ptv_sorted[d95_idx] - pred_ptv_sorted[d95_idx]
+
+        metrics['asym_ptv/loss'] = asymmetric_loss
+        metrics['asym_ptv/n_ptv_voxels'] = n_ptv_voxels.float()
+
+        return asymmetric_loss, metrics
+
+
 class BaselineUNet3D(nn.Module):
     """
     3D U-Net for direct dose regression.
@@ -1085,6 +1209,11 @@ class BaselineDosePredictor(pl.LightningModule):
         structure_oar_boundary_weight: float = 1.5,
         structure_background_weight: float = 0.5,
         structure_boundary_width_mm: float = 5.0,
+        # Asymmetric PTV loss options
+        use_asymmetric_ptv: bool = False,
+        asymmetric_ptv_weight: float = 1.0,
+        asymmetric_underdose_weight: float = 3.0,
+        asymmetric_overdose_weight: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -1117,6 +1246,13 @@ class BaselineDosePredictor(pl.LightningModule):
             background_weight=structure_background_weight,
             boundary_width_mm=structure_boundary_width_mm,
         ) if use_structure_weighted else None
+
+        # Initialize asymmetric PTV loss
+        self.asymmetric_ptv_loss = AsymmetricPTVLoss(
+            underdose_weight=asymmetric_underdose_weight,
+            overdose_weight=asymmetric_overdose_weight,
+            rx_dose_gy=rx_dose_gy,
+        ) if use_asymmetric_ptv else None
 
         self.validation_step_outputs = []
     
@@ -1174,6 +1310,15 @@ class BaselineDosePredictor(pl.LightningModule):
             for metric_name, metric_value in struct_metrics.items():
                 self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
 
+        # Optional: Asymmetric PTV loss (penalizes underdosing more)
+        if self.asymmetric_ptv_loss is not None:
+            asym_loss, asym_metrics = self.asymmetric_ptv_loss(pred_dose, dose, condition)
+            total_loss = total_loss + self.hparams.asymmetric_ptv_weight * asym_loss
+            self.log('train/asym_ptv_loss', asym_loss, on_step=False, on_epoch=True)
+            # Log individual asymmetric PTV metrics
+            for metric_name, metric_value in asym_metrics.items():
+                self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
+
         self.log('train/loss', total_loss, prog_bar=True, on_step=True, on_epoch=True)
 
         return total_loss
@@ -1200,6 +1345,13 @@ class BaselineDosePredictor(pl.LightningModule):
             with torch.no_grad():
                 _, dvh_metrics = self.dvh_loss(pred_dose, dose, condition)
                 for metric_name, metric_value in dvh_metrics.items():
+                    self.log(f'val/{metric_name}', metric_value, on_epoch=True)
+
+        # Asymmetric PTV metrics for validation
+        if self.asymmetric_ptv_loss is not None:
+            with torch.no_grad():
+                _, asym_metrics = self.asymmetric_ptv_loss(pred_dose, dose, condition)
+                for metric_name, metric_value in asym_metrics.items():
                     self.log(f'val/{metric_name}', metric_value, on_epoch=True)
 
         # Store for gamma computation
@@ -1535,6 +1687,16 @@ def main():
     parser.add_argument('--structure_boundary_width_mm', type=float, default=5.0,
                         help='Width of OAR boundary region in mm (default: 5.0)')
 
+    # Asymmetric PTV loss options
+    parser.add_argument('--use_asymmetric_ptv', action='store_true',
+                        help='Enable asymmetric PTV loss (penalizes underdosing 3x more)')
+    parser.add_argument('--asymmetric_ptv_weight', type=float, default=1.0,
+                        help='Overall weight for asymmetric PTV loss (default: 1.0)')
+    parser.add_argument('--asymmetric_underdose_weight', type=float, default=3.0,
+                        help='Weight for PTV underdosing (pred < target) (default: 3.0)')
+    parser.add_argument('--asymmetric_overdose_weight', type=float, default=1.0,
+                        help='Weight for PTV overdosing (pred > target) (default: 1.0)')
+
     args = parser.parse_args()
 
     # Validate data_dir
@@ -1652,6 +1814,11 @@ def main():
         structure_oar_boundary_weight=args.structure_oar_boundary_weight,
         structure_background_weight=args.structure_background_weight,
         structure_boundary_width_mm=args.structure_boundary_width_mm,
+        # Asymmetric PTV loss options
+        use_asymmetric_ptv=args.use_asymmetric_ptv,
+        asymmetric_ptv_weight=args.asymmetric_ptv_weight,
+        asymmetric_underdose_weight=args.asymmetric_underdose_weight,
+        asymmetric_overdose_weight=args.asymmetric_overdose_weight,
     )
 
     param_count = sum(p.numel() for p in model.parameters())
@@ -1674,7 +1841,10 @@ def main():
         print(f"  Structure-weighted loss: weight={args.structure_weighted_weight}")
         print(f"    PTV weight: {args.structure_ptv_weight}, OAR boundary: {args.structure_oar_boundary_weight}, Background: {args.structure_background_weight}")
         print(f"    Boundary width: {args.structure_boundary_width_mm} mm")
-    
+    if args.use_asymmetric_ptv:
+        print(f"  Asymmetric PTV loss: weight={args.asymmetric_ptv_weight}")
+        print(f"    Underdose penalty: {args.asymmetric_underdose_weight}x, Overdose penalty: {args.asymmetric_overdose_weight}x")
+
     # Callbacks
     callbacks = [
         ModelCheckpoint(
