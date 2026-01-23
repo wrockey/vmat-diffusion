@@ -78,7 +78,7 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 ## 🚨 QUICK START - CURRENT STATE (2026-01-22)
 
-**TL;DR: Phase C (DVH-aware loss) FULLY COMPLETE with test evaluation. DVH achieves BEST test MAE (0.95 Gy, 34% improvement) and matches best Gamma (27.7%)!**
+**TL;DR: Structure-weighted loss achieves BEST Gamma (31.2%)! DVH-aware has BEST test MAE (0.95 Gy). Two complementary approaches identified.**
 
 ### Where We Are
 | Model | Val MAE | Test MAE | Gamma (3%/3mm) | Status |
@@ -87,25 +87,31 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 | DDPM (optimized) | 3.78 Gy | - | - | NOT recommended |
 | Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | Phase A ✅ |
 | Grad+VGG | 2.27 Gy | 1.44 Gy | ~28% | Phase B ✅ |
-| **DVH-Aware** | 3.61 Gy | **0.95 Gy** | **27.7%** | **BEST MODEL** ✅ |
+| DVH-Aware | 3.61 Gy | **0.95 Gy** | 27.7% | **Best Test MAE** ✅ |
+| **Struct-Weighted** | **2.91 Gy** | 1.40 Gy | **31.2%** | **Best Gamma** ✅ |
 
-### Key Finding (Phase C - Test Evaluation Complete)
-**DVH-aware loss achieves BEST test results!**
-- **Test MAE: 0.95 Gy** - 34% improvement over baseline (1.43 Gy)!
-- **Gamma: 27.7%** - Matches gradient loss, nearly doubles baseline (14.2%)
-- Val MAE: 3.61 Gy (beats baseline 3.73 Gy by 3%)
-- DVH metrics (D95, V70) converge during training
+### Key Findings (Updated 2026-01-22)
+**Two complementary approaches:**
+1. **DVH-aware loss** → Best test MAE (0.95 Gy, 34% improvement)
+2. **Structure-weighted loss** → Best Gamma (31.2%, 3.3% improvement over grad loss)
 
-**Conclusion:** DVH-aware loss is the best model so far, achieving both MAE and Gamma improvements.
+**Structure-weighted loss (NEW):**
+- **Gamma: 31.2%** - Best so far! 3.3% better than gradient loss alone
+- **Val MAE: 2.91 Gy** - Best validation MAE (22% better than baseline)
+- Weights: 2x PTV, 1.5x OAR boundary, 0.5x background
+- Training time: 2.62h (efficient)
+
+**Conclusion:** DVH and structure-weighted losses may be complementary. Consider combining for best of both worlds.
 
 ### What To Do Next
 
 **🎯 STRATEGY: Wait for more training data (100+ cases expected soon). Run refinement experiments in meantime.**
 
 #### Immediate (Before More Data)
-1. 🔥 **Structure-weighted loss** ← **NEXT** - Weight PTV 2x, OAR boundaries 1.5x
-2. 🔬 **Region-specific Gamma analysis** - Understand where errors concentrate (PTV vs OAR vs flexible)
-3. 🔬 **Full 3D Gamma (subsample=1)** - More accurate metrics on current models
+1. ✅ **Structure-weighted loss** - COMPLETE (31.2% Gamma)
+2. 🔥 **Combined DVH + Structure-weighted** ← **NEXT** - Try combining both losses
+3. 🔬 **Region-specific Gamma analysis** - Understand where errors concentrate
+4. 🔬 **Full 3D Gamma (subsample=1)** - More accurate metrics
 
 #### When 100+ Cases Arrive
 4. 📊 **Retrain DVH model on full dataset** - Expected significant Gamma improvement
