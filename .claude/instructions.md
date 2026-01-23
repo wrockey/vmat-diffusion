@@ -659,6 +659,51 @@ predictions/<exp_name>_test/
 - `notebooks/EXPERIMENTS_INDEX.md` - Central experiment tracking
 - `docs/SCIENTIFIC_BEST_PRACTICES.md` - Full documentation standards
 
+### Standard Autonomous Experimental Protocol
+
+**When running experiments independently (user AFK), Claude MUST follow these steps:**
+
+1. **Implementation Phase:**
+   - Implement any required code changes
+   - Run a smoke test (5 epochs) to verify implementation
+   - Commit implementation with descriptive message
+   - Push to remote repository
+
+2. **Experiment Setup:**
+   - Update EXPERIMENTS_INDEX.md with experiment entry (status: 🔄 Running)
+   - Record git commit hash for reproducibility
+   - Design experiment with clear hypothesis and success criteria
+   - Clean up any test runs before starting full experiment
+
+3. **Training Phase:**
+   - Start full training run (100 epochs typical)
+   - Monitor for hangs/errors periodically
+   - If run hangs: kill process, analyze cause, fix, and restart
+   - Keep user updated on progress via status messages
+
+4. **Evaluation Phase:**
+   - Run test set evaluation when training completes
+   - Compute Gamma pass rate (3%/3mm) with appropriate subsampling
+   - Compare results to previous experiments
+
+5. **Documentation Phase:**
+   - Create figure generation script (`scripts/generate_<exp_name>_figures.py`)
+   - Generate publication-ready figures (PNG + PDF, 300 DPI)
+   - Create experiment notebook with full analysis
+   - Update EXPERIMENTS_INDEX.md with final results
+
+6. **Finalization:**
+   - Commit all documentation and figures
+   - Push to remote
+   - Provide summary of findings and next steps
+
+**Key Principles:**
+- Run experiments as an experienced researcher
+- Follow best scientific practices (reproducibility, documentation)
+- Make publication-ready outputs from the start
+- Troubleshoot independently but document issues
+- Always maintain complete audit trail
+
 ---
 
 ## Best Practices Summary

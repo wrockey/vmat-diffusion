@@ -19,6 +19,7 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-20 | grad_loss_0.1 | `5d111a0` | [2026-01-20_grad_loss_experiment.ipynb](2026-01-20_grad_loss_experiment.ipynb) | BaselineUNet3D+GradLoss | **3.67 Gy MAE (val), 1.44 Gy MAE, 27.9% Gamma (test)** | ✅ Complete |
 | 2026-01-21 | grad_vgg_combined | `dca8446` | [2026-01-21_grad_vgg_combined.ipynb](2026-01-21_grad_vgg_combined.ipynb) | BaselineUNet3D+Grad+VGG | **2.27 Gy MAE (val), 1.44 Gy MAE, ~28% Gamma (test)** | ✅ Complete |
 | 2026-01-22 | dvh_aware_loss | `1188d72` | [2026-01-22_dvh_aware_loss.ipynb](2026-01-22_dvh_aware_loss.ipynb) | BaselineUNet3D+Grad+DVH | **3.61 Gy MAE (val), 0.95 Gy MAE, 27.7% Gamma (test)** | ✅ Complete |
+| 2026-01-22 | structure_weighted_loss | `8b08506` | [2026-01-22_structure_weighted_loss.ipynb](2026-01-22_structure_weighted_loss.ipynb) | BaselineUNet3D+StructWeighted | TBD | 🔄 Running |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
