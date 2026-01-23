@@ -76,32 +76,36 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 ---
 
-## 🚨 QUICK START - CURRENT STATE (2026-01-22)
+## 🚨 QUICK START - CURRENT STATE (2026-01-23)
 
-**TL;DR: Structure-weighted loss achieves BEST Gamma (31.2%)! DVH-aware has BEST test MAE (0.95 Gy). Two complementary approaches identified.**
+**TL;DR: Asymmetric PTV loss improves D95! Structure-weighted has BEST Gamma (31.2%). DVH-aware has BEST test MAE (0.95 Gy). Ground truth itself fails clinical D95 threshold.**
 
 ### Where We Are
-| Model | Val MAE | Test MAE | Gamma (3%/3mm) | Status |
-|-------|---------|----------|----------------|--------|
-| Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | Original baseline |
-| DDPM (optimized) | 3.78 Gy | - | - | NOT recommended |
-| Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | Phase A ✅ |
-| Grad+VGG | 2.27 Gy | 1.44 Gy | ~28% | Phase B ✅ |
-| DVH-Aware | 3.61 Gy | **0.95 Gy** | 27.7% | **Best Test MAE** ✅ |
-| **Struct-Weighted** | **2.91 Gy** | 1.40 Gy | **31.2%** | **Best Gamma** ✅ |
+| Model | Val MAE | Test MAE | Gamma (3%/3mm) | D95 Gap | Status |
+|-------|---------|----------|----------------|---------|--------|
+| Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | ~-20 Gy | Original baseline |
+| DDPM (optimized) | 3.78 Gy | - | - | - | NOT recommended |
+| Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | ~-7 Gy | Phase A ✅ |
+| Grad+VGG | 2.27 Gy | 1.44 Gy | ~28% | - | Phase B ✅ |
+| DVH-Aware | 3.61 Gy | **0.95 Gy** | 27.7% | ~-7 Gy | **Best Test MAE** ✅ |
+| Struct-Weighted | **2.91 Gy** | 1.40 Gy | **31.2%** | ~-7 Gy | **Best Gamma** ✅ |
+| **Asymmetric PTV** | 3.36 Gy | 1.89 Gy | - | **-5.95 Gy** | **Best D95** ✅ |
 
-### Key Findings (Updated 2026-01-22)
-**Two complementary approaches:**
+### Key Findings (Updated 2026-01-23)
+**Three complementary approaches:**
 1. **DVH-aware loss** → Best test MAE (0.95 Gy, 34% improvement)
 2. **Structure-weighted loss** → Best Gamma (31.2%, 3.3% improvement over grad loss)
+3. **Asymmetric PTV loss** → Best D95 (-5.95 Gy gap, 25% improvement)
 
-**Structure-weighted loss (NEW):**
-- **Gamma: 31.2%** - Best so far! 3.3% better than gradient loss alone
-- **Val MAE: 2.91 Gy** - Best validation MAE (22% better than baseline)
-- Weights: 2x PTV, 1.5x OAR boundary, 0.5x background
-- Training time: 2.62h (efficient)
+**Asymmetric PTV loss (NEW - 2026-01-23):**
+- **D95 Gap: -5.95 Gy** - Best so far! Improved from -7 to -8 Gy
+- **Val MAE: 3.36 Gy** - Competitive with baseline
+- Underdose fraction dropped from 80-90% to 40-50%
+- **CRITICAL:** Ground truth D95 = 55 Gy (fails 66.5 Gy threshold!)
 
-**Conclusion:** DVH and structure-weighted losses may be complementary. Consider combining for best of both worlds.
+**Key Insight:** The clinical threshold (66.5 Gy) may be too strict for this dataset. Ground truth plans themselves fail this threshold by 11.5 Gy.
+
+**Conclusion:** Multiple loss functions address different aspects. Consider combining asymmetric + DVH + structure-weighted for comprehensive optimization.
 
 ### 🚨 CRITICAL INSIGHT: Is Gamma the Right Metric? (2026-01-23)
 
@@ -126,36 +130,57 @@ cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && pytho
 
 **Testing This Hypothesis:** See `notebooks/2026-01-23_gamma_metric_analysis.ipynb`
 
+### Gamma Metric Analysis Results (2026-01-23)
+
+**Analysis Complete:** See `notebooks/2026-01-23_gamma_metric_analysis.ipynb`
+
+**Key Findings:**
+| Region | Gamma Pass Rate | Interpretation |
+|--------|-----------------|----------------|
+| PTV | **41.5%** | Higher than overall (31.2%) ✓ |
+| High-dose | **38.6%** | Higher than overall ✓ |
+| Low-dose | 30.4% | Similar to overall |
+| OAR | **17.3%** | Lowest - struggle with OAR gradients |
+
+**CRITICAL FINDING:** Model systematically **underdoses PTVs by 7-8 Gy**!
+- PTV56 D95: Pred ~47 Gy vs Target ~55 Gy (threshold: 53.2 Gy)
+- All OAR constraints pass, but PTV coverage fails
+- This is a **REAL clinical problem**, not just a metric problem
+
 ### What To Do Next
 
-**🎯 STRATEGY: Test metric hypothesis FIRST, then decide on path forward.**
+**🎯 STRATEGY: Asymmetric PTV loss improved D95 but didn't fully solve it. Ground truth itself fails clinical threshold.**
 
-#### 🔥 IMMEDIATE PRIORITY: Metric Analysis
-1. 🔥 **DVH Clinical Acceptability** ← **NOW** - Do predictions pass clinical constraints?
-2. 🔥 **PTV-Only Gamma** ← **NOW** - Is model accurate where it matters?
-3. 🔬 **Gradient Plausibility** - Are dose gradients physically realistic?
+#### ✅ COMPLETED: Asymmetric PTV Loss Experiment (2026-01-23)
+- **Hypothesis:** Penalize underdosing 3x more than overdosing
+- **Results:**
+  - D95 Gap: -5.95 Gy (improved from -7 to -8 Gy baseline)
+  - Test MAE: 1.89 Gy
+  - Underdose fraction: Dropped from 80-90% to 40-50%
+- **Key Finding:** Ground truth PTV70 D95 = 55 Gy (fails 66.5 Gy threshold by 11.5 Gy!)
+- **Conclusion:** Clinical threshold may be too strict for this dataset
 
-**Key Question:** If DVH constraints pass and PTV Gamma is high, do we have a REAL problem or a METRIC problem?
-
-#### Previously Planned (On Hold Pending Analysis)
-- Combined DVH + Structure-weighted loss
-- Region-specific Gamma analysis (full)
-- Full 3D Gamma (subsample=1)
+#### Next Steps
+1. **Re-evaluate clinical thresholds** based on actual ground truth DVH statistics
+2. **Combine asymmetric + DVH-aware losses** for stronger D95 optimization
+3. **Increase underdose weight** to 5x or 10x if stronger correction needed
+4. **Wait for 100+ cases** - larger dataset may show different ground truth D95
 
 #### When 100+ Cases Arrive
-- Retrain best model on full dataset
-- Re-evaluate with corrected metrics
+- Retrain asymmetric PTV model on full dataset
+- Re-evaluate with clinical metrics
 
-#### If Problem is Real (Not Just Metrics)
+#### Parking Lot Experiments
+- Combined DVH + Structure-weighted + Asymmetric
 - Adversarial loss (PatchGAN) for edge sharpness
 - Attention U-Net architecture
-- **Revisit DDPM/Flow Matching** - may be appropriate if dose is multi-modal
+- **Revisit DDPM/Flow Matching** - may produce physically plausible individual solutions
 
 #### Don't Use
 - ❌ **VGG perceptual loss** - Doesn't help Gamma
-- ⚠️ **DDPM** - Previously not recommended, but MAY be appropriate if multi-modal hypothesis confirmed
+- ⚠️ Pure MSE/MAE optimization - leads to PTV underdosing
 
-**Previous Insight (Still Valid):** The ~31% Gamma ceiling with 23 cases likely reflects data limitation. But we must first determine if Gamma is even the right metric to optimize.
+**Key Insight:** MSE treats overdose and underdose equally, but clinically PTV underdose is much worse. Asymmetric losses are necessary.
 
 ### Key Files
 - **Best overall model:** `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt`
@@ -1186,4 +1211,4 @@ This ensures continuity across sessions and after context compaction.
 
 ---
 
-*Last updated: 2026-01-22 (Updated path forward: waiting for 100+ cases, structure-weighted loss next)*
+*Last updated: 2026-01-23 (Asymmetric PTV loss complete: D95 gap improved to -5.95 Gy, ground truth fails clinical threshold)*

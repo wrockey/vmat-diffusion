@@ -20,6 +20,8 @@ See `docs/EXPERIMENT_STRUCTURE.md` for organization guidelines.
 | 2026-01-21 | grad_vgg_combined | `dca8446` | [2026-01-21_grad_vgg_combined.ipynb](2026-01-21_grad_vgg_combined.ipynb) | BaselineUNet3D+Grad+VGG | **2.27 Gy MAE (val), 1.44 Gy MAE, ~28% Gamma (test)** | ✅ Complete |
 | 2026-01-22 | dvh_aware_loss | `1188d72` | [2026-01-22_dvh_aware_loss.ipynb](2026-01-22_dvh_aware_loss.ipynb) | BaselineUNet3D+Grad+DVH | **3.61 Gy MAE (val), 0.95 Gy MAE, 27.7% Gamma (test)** | ✅ Complete |
 | 2026-01-22 | structure_weighted_loss | `8b08506` | [2026-01-22_structure_weighted_loss.ipynb](2026-01-22_structure_weighted_loss.ipynb) | BaselineUNet3D+Grad+StructWeighted | **2.91 Gy MAE (val), 1.40 Gy MAE, 31.2% Gamma (test)** | ✅ Complete |
+| 2026-01-23 | gamma_metric_analysis | `e0a0274` | [2026-01-23_gamma_metric_analysis.ipynb](2026-01-23_gamma_metric_analysis.ipynb) | Analysis | PTV underdose identified: -7 to -8 Gy | ✅ Complete |
+| 2026-01-23 | asymmetric_ptv_loss | `a88247b` | [2026-01-23_asymmetric_ptv_loss_experiment.ipynb](2026-01-23_asymmetric_ptv_loss_experiment.ipynb) | BaselineUNet3D+Grad+AsymPTV | **3.36 Gy MAE (val), 1.89 Gy MAE, D95 gap: -5.95 Gy (test)** | ✅ Complete |
 
 ### Phase 1 Optimization Results
 **Root cause identified:** Training validation used high DDIM step counts, inflating MAE to 12.19 Gy.
@@ -149,17 +151,41 @@ See `docs/DDPM_OPTIMIZATION_PLAN.md` for detailed analysis.
 
 **Key insight:** Weighting errors by clinical importance helps the model focus on critical regions. Structure-weighted loss achieves best Gamma while DVH achieves best test MAE - they may be complementary.
 
+### Asymmetric PTV Loss Experiment Results (2026-01-23) ← NEW
+
+**Key Finding: Asymmetric PTV loss improves D95 but doesn't fully solve underdosing!**
+
+| Metric | Baseline | Grad Loss | DVH-Aware | Struct-Weight | **Asym PTV** | Change |
+|--------|----------|-----------|-----------|---------------|--------------|--------|
+| Val MAE | 3.73 Gy | 3.67 Gy | 3.61 Gy | 2.91 Gy | **3.36 Gy** | -10% vs baseline |
+| Test MAE | 1.43 Gy | 1.44 Gy | 0.95 Gy | 1.40 Gy | **1.89 Gy** | +32% vs baseline |
+| **D95 Gap** | ~-20 Gy | ~-7 Gy | ~-7 Gy | ~-7 Gy | **-5.95 Gy** | **Best D95** ✅ |
+| Training Time | 2.55h | 1.85h | 11.2h | 2.62h | **2.6h** | Efficient |
+
+**Hypothesis:** Penalizing underdosing 3x more than overdosing should improve PTV D95.
+
+**Result:** Partial success:
+- D95 gap improved from ~-7 Gy to -5.95 Gy (15% improvement)
+- Validation showed epochs with **overdosing** (negative D95 gap = model learned to prefer overdose)
+- Underdose fraction dropped from 80-90% to 40-50%
+
+**Critical Insight:** The ground truth D95 for PTV70 is **55 Gy**, which **fails the 66.5 Gy clinical threshold**. This suggests the threshold may be too strict for this dataset.
+
 **Conclusions:**
-- DVH-aware loss is the best model so far
+- DVH-aware loss is the best model for test MAE (0.95 Gy)
+- Structure-weighted loss is best for Gamma (31.2%)
+- Asymmetric PTV loss is best for D95 gap (-5.95 Gy)
 - Gamma ~28% ceiling suggests loss function alone cannot reach 95% target
-- Next steps: data augmentation, structure-weighted loss, or architecture changes
+- Next steps: data augmentation, combined losses, or architecture changes
 
 ### Notebooks Needing Creation
 - [x] `2026-01-20_ddpm_optimization.ipynb` - Document DDPM training + Phase 1 optimization ✅
 - [x] `2026-01-20_strategic_assessment.ipynb` - Scientific value & path forward analysis ✅
 - [x] `2026-01-20_grad_loss_experiment.ipynb` - Document gradient loss experiment results ✅
 - [x] `2026-01-21_grad_vgg_combined.ipynb` - Document Grad+VGG experiment results ✅
-- [x] `2026-01-22_dvh_aware_loss.ipynb` - Document DVH-aware loss experiment results ✅ NEW
+- [x] `2026-01-22_dvh_aware_loss.ipynb` - Document DVH-aware loss experiment results ✅
+- [x] `2026-01-23_gamma_metric_analysis.ipynb` - Gamma metric hypothesis testing ✅ NEW
+- [x] `2026-01-23_asymmetric_ptv_loss_experiment.ipynb` - Asymmetric PTV loss results ✅ NEW
 - [ ] `2026-01-21_semi_multi_modal_hypothesis.ipynb` - Semi-multi-modal hypothesis analysis
 
 ---
