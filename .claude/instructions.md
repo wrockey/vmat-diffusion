@@ -368,6 +368,19 @@ Phase C Result: Gamma ≈ 28% (DVH gives best MAE but same Gamma) ✅ CONFIRMED
 9. `deeper_unet` - Increase model capacity (96 base channels)
 10. `combined_optimal` - Best losses combined
 
+#### 🗄️ BACKBURNER: Alternatives to Revisit if Strategy Fails
+*Keep these in mind - don't forget about them!*
+
+| Alternative | When to Try | Description |
+|-------------|-------------|-------------|
+| `nnunet_baseline` | If custom U-Net plateaus | State-of-art medical segmentation architecture |
+| `swin_unetr` | If CNNs insufficient | Transformer-based, captures long-range dependencies |
+| `flow_matching_v1` | If need generative approach | ODE-based, simpler than DDPM, faster inference |
+| `ensemble_models` | Quick win attempt | Average predictions from existing models |
+| `physics_bounded_ddpm` | If semi-multi-modal validated | DDPM with region-aware physics constraints |
+
+**Full details:** See `notebooks/EXPERIMENTS_INDEX.md` → "Backburner" section
+
 #### COMPLETED ✅
 - ~~`grad_loss_0.1`~~ ✅ Phase A - Gamma 27.9%
 - ~~`grad_vgg_combined`~~ ✅ Phase B - VGG doesn't help Gamma

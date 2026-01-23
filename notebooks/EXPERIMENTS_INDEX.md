@@ -334,30 +334,57 @@ Real data is preferred over augmentation:
 - [ ] ~~ddpm_dose_v2~~ (Cancelled - DDPM not recommended)
 - [ ] ~~ddpm_dose_v2_conditioned~~ (Cancelled - DDPM not recommended)
 
-### 3. Architecture Improvements (Tier 3 Priority)
+---
 
-- [ ] attention_unet (add attention gates to U-Net)
-- [ ] deeper_unet (increase to 96 base channels, add dropout 0.1-0.2)
-- [ ] nnunet_baseline (try nnU-Net architecture)
-- [ ] swin_unetr (Transformer-based architecture)
+## 🗄️ BACKBURNER: Alternatives to Revisit if Current Strategy Fails
 
-### 4. Alternative Approaches (Tier 4 Priority)
+**These approaches are on hold but should be revisited if:**
+- Gamma stays <50% after 100+ cases
+- Loss function improvements plateau
+- Architecture changes needed
 
-- [ ] flow_matching_v1 (simpler than diffusion, ODE-based, faster inference)
-  - Use `torchdiffeq` for implementation
-  - Condition on anatomy similar to current approach
-- [ ] ensemble_models (combine multiple models)
+### Architecture Improvements
 
-### 5. Ablation Studies (Lower Priority)
+| Experiment | Description | When to Try | Expected Impact |
+|------------|-------------|-------------|-----------------|
+| `attention_unet` | Add attention gates to U-Net | If Gamma <50% with 100+ cases | Better feature focus on boundaries |
+| `deeper_unet` | 96 base channels, dropout 0.1-0.2 | If model underfits with more data | More capacity for complex patterns |
+| `nnunet_baseline` | Try nnU-Net architecture | If custom U-Net plateaus | State-of-art medical segmentation |
+| `swin_unetr` | Transformer-based (MONAI) | If CNNs insufficient | Long-range dependencies |
 
-- [ ] ablation_no_sdf (binary masks only)
-- [ ] ablation_no_constraints (no FiLM conditioning)
-- [ ] ablation_patch_size (64 vs 128 vs 160)
+**Notes:**
+- Start with attention_unet (lowest effort, proven in medical imaging)
+- nnU-Net has good auto-configuration but less control
+- Swin UNETR is highest effort but may capture global dose patterns
 
-### 6. Post-95% Gamma (Future - Tier 5)
+### Alternative Generative Approaches
 
-- [ ] physics_constraints (Monte Carlo surrogate loss for deliverability)
-- [ ] mlc_prediction (Phase 2: MLC/arc sequence prediction from dose)
+| Experiment | Description | When to Try | Pros/Cons |
+|------------|-------------|-------------|-----------|
+| `flow_matching_v1` | ODE-based, simpler than DDPM | If need generative sampling | Faster inference, may handle multi-modality better |
+| `ensemble_models` | Combine baseline + DVH + grad | Quick experiment | Low effort, may squeeze few % Gamma |
+| `physics_bounded_ddpm` | DDPM with region-aware losses | If semi-multi-modal hypothesis validated | Complex but principled |
+
+**Notes:**
+- Flow Matching uses `torchdiffeq`, condition on anatomy same as current
+- Ensemble is quick win - average predictions from existing models
+- DDPM revisit only if physics constraints help
+
+### Ablation Studies (For Publication)
+
+| Experiment | Purpose | Priority |
+|------------|---------|----------|
+| `ablation_no_sdf` | Does SDF help vs binary masks? | Low - for paper |
+| `ablation_no_constraints` | Does FiLM conditioning help? | Low - for paper |
+| `ablation_patch_size` | Optimal patch (64/128/160)? | Low - for paper |
+
+### Post-95% Gamma (Future Work)
+
+| Experiment | Description | Prerequisite |
+|------------|-------------|--------------|
+| `physics_constraints` | Monte Carlo surrogate loss | After 95% Gamma achieved |
+| `mlc_prediction` | Predict MLC sequences from dose | Phase 2 of project |
+| `deliverability_check` | Verify predicted doses are deliverable | After MLC prediction |
 
 ---
 
