@@ -79,9 +79,23 @@ All components already implemented in prior experiments — need to combine with
 
 ---
 
-## CURRENT STATE (as of 2026-01-23)
+## CURRENT STATE (as of 2026-02-13)
 
-### Model Performance
+### Transition: Home (Pilot) → Work (Production)
+
+The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that validated methodology and loss function design. The trained weights are not worth porting — the code and documented findings are the deliverables.
+
+**What transfers from the pilot:**
+- All loss function implementations (gradient, DVH-aware, structure-weighted, asymmetric PTV)
+- The strategic direction (clinical acceptability > global Gamma)
+- The decisions log (DDPM dead end, VGG useless, etc.)
+- The preprocessing pipeline and evaluation infrastructure
+
+**What does NOT transfer:**
+- Trained checkpoints (retrain from scratch on 100+ cases)
+- The 23-case test set results (n=2 test set is not statistically meaningful)
+
+### Pilot Study Results (n=23, Home Machine — For Reference Only)
 
 | Model | Val MAE | Test MAE | Gamma | PTV Gamma | D95 Gap | Key Strength |
 |-------|---------|----------|-------|-----------|---------|--------------|
@@ -91,66 +105,63 @@ All components already implemented in prior experiments — need to combine with
 | Structure-Weighted | **2.91 Gy** | 1.40 Gy | **31.2%** | **41.5%** | ~-7 Gy | **Best Gamma** |
 | Asymmetric PTV | 3.36 Gy | 1.89 Gy | — | — | **-5.95 Gy** | **Best D95** |
 
-### Key Numbers
+### Key Findings from Pilot
 
-- **Dataset:** 23 usable cases (24 total, case_0013 skipped — non-SIB). Expecting 100-150 near-term.
-- **PTV-region Gamma:** 41.5% vs 31.2% overall — confirms model is more accurate where it matters.
-- **Ground truth PTV70 D95:** 55 Gy — fails 66.5 Gy clinical threshold by 11.5 Gy. Threshold may be too strict for this dataset. Re-evaluate with 100+ cases.
-- **All models pass OAR constraints** (conservative on OAR sparing).
-- **All models systematically underdose PTVs** (MSE loss treats underdose/overdose equally; asymmetric loss partially addresses this).
-
-### Key Checkpoints and Artifacts
-
-| What | Path |
-|------|------|
-| Best test MAE model | `runs/dvh_aware_loss/checkpoints/best-epoch=086-val/mae_gy=3.609.ckpt` |
-| Best val MAE model | `runs/grad_vgg_combined/checkpoints/best-epoch=032-val/mae_gy=2.267.ckpt` |
-| Best Gamma model | `runs/structure_weighted_loss/checkpoints/` |
-| Best D95 model | `runs/asymmetric_ptv_loss/checkpoints/` |
-| Test predictions | `predictions/dvh_aware_loss_test/evaluation_results.json` |
+- **PTV-region Gamma** (41.5%) much higher than overall (31.2%) — confirms model is more accurate where it matters clinically.
+- **Ground truth PTV70 D95** was 55 Gy — failed 66.5 Gy clinical threshold by 11.5 Gy. Re-evaluate with 100+ cases.
+- **All models pass OAR constraints** but systematically underdose PTVs.
+- **Gradient loss is essential** — nearly doubled Gamma for free.
 
 ---
 
 ## NEXT STEPS (Prioritized)
 
-### Phase 1: Clinical Evaluation Framework (NOW)
+### Phase 0: Work Machine Setup (NOW)
 
-Build a new evaluation script/module that replaces global Gamma as the primary metric:
+1. Clone repo to work machine, install conda environment (`environment.yml`)
+2. Verify GPU access: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
+3. Collect and anonymize 100+ DICOM-RT cases
+4. Preprocess all cases: `python scripts/preprocess_dicom_rt_v2.2.py --skip_plots`
+5. Verify preprocessing: spot-check 3-5 cases with `notebooks/verify_npz.ipynb`
+6. Update PLATFORM REFERENCE section below with work machine paths
+
+### Phase 1: Clinical Evaluation Framework
+
+Build before training anything — defines what "good" means on the new dataset:
 
 - Per-structure DVH compliance (pass/fail per QUANTEC constraint)
-- PTV-only Gamma (3%/3mm) — already shown to be 41.5% vs 31.2% overall
+- PTV-only Gamma (3%/3mm)
 - Dose gradient/falloff analysis: monotonicity, penumbra width
 - Single "clinical acceptability" report per case
+- Validate ground truth D95 thresholds on the larger dataset
 
-**Then:** Re-evaluate ALL five existing models with the new framework. The DVH-aware or structure-weighted model may already be much closer to clinical acceptability than global Gamma suggests.
+### Phase 2: Combined Loss — First Real Experiment
 
-### Phase 2: Combined Loss Function (NOW)
+Skip individual loss ablations (already done in pilot). Go straight to the combined loss:
 
-Combine the three best loss components (all already implemented):
-
+- Gradient loss (3D Sobel, weight 0.1)
+- Structure-weighted loss (2x PTV, 1.5x OAR boundary, 0.1x background)
 - Asymmetric PTV loss (underdose penalty >> overdose)
 - DVH-aware loss (D95, Dmean/Vx compliance)
-- Structure-weighted loss (2x PTV, 1.5x OAR boundary, 0.1x background)
-- Gradient loss (3D Sobel for edge preservation)
 
-Train and evaluate with the new clinical framework from Phase 1.
+Evaluate with the clinical framework from Phase 1. With 100+ cases, expect:
+- 10-15 test cases (statistically meaningful)
+- Significantly better absolute metrics than pilot
+- Publishable results
 
-### Phase 3: Retrain on 100+ Cases (WHEN DATA ARRIVES)
+### Phase 3: Iterate Based on Results
 
-1. Preprocess new cases with `preprocess_dicom_rt_v2.2.py`
-2. Update train/val/test splits
-3. Retrain combined-loss model on larger dataset
-4. Evaluate with clinical framework
-5. Re-assess ground truth D95 threshold with more cases
+Depending on Phase 2 outcomes:
+- If DVH compliance is close but not there → tune loss weights
+- If architecture is the bottleneck → try attention U-Net or deeper network
+- If data diversity is still limiting → add augmentation (torchio)
 
 ### Parking Lot (revisit only if above plateaus)
 
 - Adversarial loss (PatchGAN) for edge sharpness
-- Attention U-Net or deeper network (96 base channels)
 - Flow Matching (generative: sample single plausible solutions instead of averaging)
 - Physics-bounded DDPM (region-aware noise schedules)
 - nnU-Net, Swin-UNETR (architecture alternatives)
-- Data augmentation (torchio: on top of larger dataset, not instead of)
 - Ensemble of existing models (quick experiment: average predictions)
 
 ---
@@ -161,6 +172,7 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-13 | **Start clean on work machine with 100+ cases** | 23-case pilot validated methodology and loss design; trained weights are throwaway; code + docs are the deliverable; n=2 test set not statistically meaningful; 100+ cases needed for publishable results |
 | 2026-02-13 | **Shift primary metric from global Gamma to DVH compliance + PTV Gamma + gradient realism** | Global Gamma penalizes valid low-dose diversity; PTV Gamma (41.5%) is much higher than overall (31.2%); DVH compliance + physical realism are what clinicians actually evaluate |
 | 2026-01-23 | Ground truth itself fails clinical D95 threshold | GT PTV70 D95 = 55 Gy vs 66.5 Gy threshold; dataset may have non-standard planning; re-evaluate with more data |
 | 2026-01-21 | Dose prediction is semi-multi-modal | Low-dose regions are flexible; multiple valid solutions exist; pure pixel-wise metrics penalize valid diversity |
@@ -171,31 +183,29 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 ## PLATFORM REFERENCE
 
+### Work Machine (Active — update paths after setup)
+
 | Setting | Value |
 |---------|-------|
-| Platform | **Native Windows** (NOT WSL for training) |
+| Platform | TBD (update after setup) |
+| Project | TBD |
+| Data | TBD (100+ cases) |
+| Conda env | `vmat-diffusion` (`environment.yml`) |
+| GPU | NVIDIA RTX 3090 (24 GB) |
+
+### Home Machine (Pilot — archived)
+
+| Setting | Value |
+|---------|-------|
+| Platform | Native Windows (NOT WSL for training) |
 | Project | `C:\Users\Bill\vmat-diffusion-project` |
 | Data | `I:\processed_npz` (23 cases) |
 | Conda env | `vmat-win` (via Pinokio miniconda) |
 | GPU | NVIDIA RTX 3090 (24 GB) |
 
-### Activate Environment
-
-```cmd
-call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win
-cd C:\Users\Bill\vmat-diffusion-project
-```
-
-### Claude Code Runs in WSL
-
-- File operations (read, edit, git): Use WSL paths `/mnt/c/Users/Bill/vmat-diffusion-project`
-- Python scripts (training, inference): Use `cmd.exe /c` passthrough for GPU access:
-  ```bash
-  cmd.exe /c "call C:\pinokio\bin\miniconda\Scripts\activate.bat vmat-win && cd C:\Users\Bill\vmat-diffusion-project && python scripts\train_baseline_unet.py --exp_name test --data_dir I:\processed_npz --epochs 10"
-  ```
-
 ### DataLoader Settings (avoid deadlocks)
 
+- Linux: `num_workers=2`, `persistent_workers=False`
 - WSL: `num_workers=2`, `persistent_workers=False`
 - Native Windows: `num_workers=0`
 
@@ -205,4 +215,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-13 (Strategic pivot: clinical acceptability over global Gamma; documentation consolidation)*
+*Last updated: 2026-02-13 (Transition plan: home pilot complete, starting clean on work machine with 100+ cases)*
