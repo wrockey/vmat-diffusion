@@ -206,18 +206,122 @@ There is no pytest suite. Evaluation is done through inference scripts with medi
 | DVH (D95, Dmean, Vx) | Per-structure clinical constraints | Per-structure evaluation |
 | QUANTEC compliance | All OARs within limits | Clinical constraint checking |
 
-## Experiment Workflow
+## Experiment Documentation Requirements
 
-1. **Before running:** Commit all changes (`git commit -m "Pre-experiment: <name>"`)
-2. **Record git hash** for reproducibility
-3. **Run training** with appropriate CLI flags
-4. **Run inference** on test set
-5. **Generate figures:** Create `scripts/generate_<exp>_figures.py` (300 DPI, PNG + PDF)
-6. **Create notebook:** `notebooks/YYYY-MM-DD_<exp_name>.ipynb` from template
-7. **Update tracking:** Add entry to `notebooks/EXPERIMENTS_INDEX.md`
-8. **Commit results:** `git commit -m "Results: <name> - <key metrics>"`
+**MANDATORY: Every experiment MUST be fully documented, logged, reproducible, and publishable. No exceptions.** Treat every experiment as if it will appear in a peer-reviewed journal submission. Incomplete documentation is equivalent to an experiment that never happened.
 
-Publication figure standards: 300 DPI, serif font, 12pt minimum, colorblind-friendly palette.
+### Pre-Experiment (REQUIRED before any training run)
+
+1. **Commit all code changes to git** — never run experiments on uncommitted code:
+   ```bash
+   git add -A
+   git commit -m "Pre-experiment: <experiment_name>"
+   git status  # Must show "nothing to commit, working tree clean"
+   ```
+2. **Record the exact git commit hash** — this is the only reliable way to reproduce results later. Without it, the experiment cannot be reproduced and has no scientific value.
+
+### During the Experiment
+
+3. **Run training** with appropriate CLI flags. All hyperparameters must be captured in the training config JSON that the scripts auto-save to `runs/<exp_name>/training_config.json`.
+4. **Run test-set inference and evaluation** when training completes. Record MAE, Gamma (3%/3mm), DVH metrics, and QUANTEC compliance.
+
+### Post-Experiment Documentation (ALL steps REQUIRED)
+
+5. **Create a figure generation script** (`scripts/generate_<exp_name>_figures.py`):
+   - Use existing scripts as templates (e.g., `scripts/generate_grad_loss_figures.py`, `scripts/generate_dvh_loss_figures.py`)
+   - **Every figure must be publication-ready from the start** — there is no "draft" quality:
+     ```python
+     plt.rcParams.update({
+         'font.family': 'serif',
+         'font.size': 12,
+         'figure.dpi': 150,
+         'savefig.dpi': 300,
+         'savefig.bbox': 'tight',
+     })
+     ```
+   - Save every figure as both PNG (300 DPI raster) and PDF (vector) to `runs/<exp_name>/figures/`
+   - Use colorblind-friendly color palettes (see existing scripts for standard palette)
+   - Minimum font size: 12pt. Axes must be labeled with units. Legends must be present.
+
+6. **Create an experiment notebook** (`notebooks/YYYY-MM-DD_<exp_name>.ipynb`):
+   - Copy from `notebooks/TEMPLATE_experiment.ipynb`
+   - Reference existing notebooks for format (e.g., `notebooks/2026-01-20_grad_loss_experiment.ipynb`)
+   - **All 10 sections are required:**
+     1. **Overview** — Objective, hypothesis, key results summary, conclusion
+     2. **Reproducibility Information** — Git commit hash, Python/PyTorch/CUDA versions, GPU model, exact command to reproduce
+     3. **Dataset Information** — Number of cases, split, preprocessing version
+     4. **Model/Method Configuration** — Architecture, loss functions, conditioning
+     5. **Training Configuration** — Epochs, LR, batch size, patch size, augmentations
+     6. **Results** — Embedded publication-ready figures with descriptive captions. Every figure must have a caption explaining what it shows and why it matters.
+     7. **Analysis** — Observations, comparison to all prior experiments, statistical assessment, limitations
+     8. **Conclusions and Recommendations** — What worked, what didn't, and why
+     9. **Next Steps** — What this experiment motivates
+     10. **Artifacts** — Table of file paths (checkpoints, configs, predictions, figures)
+   - **Figures in notebooks must include captions and written assessments** — a figure without interpretation is useless. Explain what the reader should observe, what it means clinically, and how it compares to prior results.
+
+7. **Update the experiment index** (`notebooks/EXPERIMENTS_INDEX.md`):
+   - This is the **single source of truth** for all experiments ever run
+   - Add a row with: Date, Experiment ID, Git commit hash, Notebook link, Model type, Key metrics (MAE, Gamma, D95), Status
+   - If an experiment is not in this index, it does not exist
+
+8. **Commit all documentation**:
+   ```bash
+   git add scripts/generate_<exp_name>_figures.py
+   git add notebooks/YYYY-MM-DD_<exp_name>.ipynb
+   git add notebooks/EXPERIMENTS_INDEX.md
+   git commit -m "Results: <exp_name> - <key metric summary>"
+   ```
+
+### Reproducibility Requirements (NON-NEGOTIABLE)
+
+Every experiment must record:
+- **Git commit hash** of the exact code used
+- **Python version**, PyTorch version, CUDA version, GPU model
+- **Random seed** (use 42 unless documented otherwise)
+- **Exact CLI command** to reproduce the run
+- **Data split** used (case IDs for train/val/test)
+- **All hyperparameters** (saved automatically to `training_config.json`)
+
+If any of these are missing, the experiment is not reproducible and cannot be cited in a publication.
+
+### Publication Figure Standards
+
+All figures — whether in scripts, notebooks, or standalone — must meet these standards:
+
+| Requirement | Standard |
+|-------------|----------|
+| Resolution | 300 DPI minimum |
+| Font | Serif family, 12pt minimum |
+| Format | Both PNG (raster) and PDF (vector) |
+| Colors | Colorblind-friendly palette |
+| Axes | Labeled with units (e.g., "MAE (Gy)", "Epoch") |
+| Legends | Present and readable |
+| Captions | Required in notebooks — describe what is shown and what to conclude |
+
+### Experiment Output Structure
+
+```
+runs/<exp_name>/
+├── checkpoints/              # Model checkpoints (best + last)
+├── figures/                  # Publication-ready figures (PNG + PDF)
+├── version_*/                # PyTorch Lightning logs
+├── training_config.json      # All hyperparameters
+├── training_summary.json     # Final metrics
+└── metrics.csv               # Per-epoch metrics
+
+predictions/<exp_name>_test/
+├── case_XXXX_pred.npz        # Per-case predictions
+└── evaluation_results.json   # Aggregate test metrics
+```
+
+### What "Publishable" Means
+
+Every experiment notebook should be ready to drop into a journal supplementary section as-is. This means:
+- A reader unfamiliar with the project can understand what was done and why
+- All results are quantified with proper metrics, not just "it looks better"
+- Comparisons to prior experiments use consistent metrics and methodology
+- Limitations and failure modes are honestly documented
+- Figures tell a clear story without requiring external explanation
 
 ## Current Project Status (as of 2026-01-23)
 
