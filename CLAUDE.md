@@ -323,37 +323,20 @@ Every experiment notebook should be ready to drop into a journal supplementary s
 - Limitations and failure modes are honestly documented
 - Figures tell a clear story without requiring external explanation
 
-## Current Project Status (as of 2026-01-23)
+## Current Project Status
 
-### Model Performance
-| Model | Val MAE | Test MAE | Gamma (3%/3mm) | D95 Gap |
-|-------|---------|----------|----------------|---------|
-| Baseline U-Net | 3.73 Gy | 1.43 Gy | 14.2% | ~-20 Gy |
-| Gradient Loss 0.1 | 3.67 Gy | 1.44 Gy | 27.9% | ~-7 Gy |
-| DVH-Aware | 3.61 Gy | **0.95 Gy** | 27.7% | ~-7 Gy |
-| Structure-Weighted | **2.91 Gy** | 1.40 Gy | **31.2%** | ~-7 Gy |
-| Asymmetric PTV | 3.36 Gy | 1.89 Gy | — | **-5.95 Gy** |
+**For current strategy, model performance, decisions, and next steps: see `.claude/instructions.md`** (the living project state document, auto-loaded every session).
 
-### Key Findings
-- **DDPM is NOT recommended** for this task — matches baseline but adds complexity
-- **Gradient loss** nearly doubled Gamma (14.2% → 27.9%)
-- **DVH-aware loss** achieved best test MAE (0.95 Gy)
-- **Structure-weighted loss** achieved best Gamma (31.2%)
-- **Asymmetric PTV loss** best D95 coverage (-5.95 Gy gap)
-- Ground truth itself fails clinical D95 threshold by ~11.5 Gy
-- VGG perceptual loss does NOT help Gamma — do not use
-
-### What NOT to Pursue
-- DDPM tuning (structural mismatch with deterministic dose prediction)
-- VGG perceptual loss (no Gamma improvement)
-- Pure MSE/MAE optimization (leads to PTV underdosing)
+**For experiment history: see `notebooks/EXPERIMENTS_INDEX.md`** (the master experiment log).
 
 ## Important Notes
 
 - **No CI/CD pipeline** — experiments are tracked manually via git + notebooks
 - **No linter/formatter configured** — code follows PEP8 informally
 - **No pytest tests** — validation is through medical physics metrics
-- **Experiment tracking:** `notebooks/EXPERIMENTS_INDEX.md` is the authoritative source
-- **Detailed session state:** `.claude/instructions.md` has extensive project context, progress logs, and next steps
+- **Documentation hierarchy:**
+  - `.claude/instructions.md` — living project state (strategy, decisions, next steps)
+  - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol)
+  - `notebooks/EXPERIMENTS_INDEX.md` — master experiment log
 - **DataLoader:** Use `num_workers=2`, `persistent_workers=False` to avoid deadlocks (especially on WSL)
 - **OAR name mapping:** `oar_mapping.json` maps 100+ clinical naming variations to 8 canonical structures
