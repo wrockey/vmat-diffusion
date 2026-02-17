@@ -327,7 +327,8 @@ Every experiment notebook should be ready to drop into a journal supplementary s
 
 ## Current Project Status
 
-**For current strategy, model performance, decisions, and next steps: see `.claude/instructions.md`** (the living project state document, auto-loaded every session).
+**The single authoritative project plan is: `.claude/instructions.md`**
+It contains the phased roadmap (Phases 0-3 + Parking Lot), strategic direction, current state, decisions log, and all planning content. Do NOT create separate plan files — all planning goes there.
 
 **For experiment history: see `notebooks/EXPERIMENTS_INDEX.md`** (the master experiment log).
 
@@ -336,9 +337,10 @@ Every experiment notebook should be ready to drop into a journal supplementary s
 - **No CI/CD pipeline** — experiments are tracked manually via git + notebooks
 - **No linter/formatter configured** — code follows PEP8 informally
 - **No pytest tests** — validation is through medical physics metrics
-- **Documentation hierarchy:**
-  - `.claude/instructions.md` — living project state (strategy, decisions, next steps)
-  - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol)
-  - `notebooks/EXPERIMENTS_INDEX.md` — master experiment log
+- **Documentation hierarchy (3 files only, no exceptions):**
+  - `.claude/instructions.md` — **THE PLAN:** living project state, strategy, phased roadmap, decisions log. Updated every session.
+  - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol). Rarely updated.
+  - `notebooks/EXPERIMENTS_INDEX.md` — master experiment log. Updated after every experiment.
+- **No separate plan files.** If a sub-plan is needed, it must be referenced from `.claude/instructions.md`. Currently one archived sub-plan exists: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED).
 - **DataLoader:** Use `num_workers=2`, `persistent_workers=False` to avoid deadlocks (especially on WSL)
 - **OAR name mapping:** `oar_mapping.json` maps 100+ clinical naming variations to 8 canonical structures

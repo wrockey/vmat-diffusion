@@ -1,15 +1,21 @@
-# VMAT Diffusion — Project State
+# VMAT Diffusion — Project Plan & State
 
-**This file is the single source of truth for project strategy, current state, and next steps.**
+**This file is the SINGLE AUTHORITATIVE PLAN for the project.**
+**It contains strategy, current state, the phased roadmap, and all decisions.**
 **It is automatically loaded every session. Keep it current.**
 
 | Document | Role | Update when |
 |----------|------|-------------|
-| **This file** (`.claude/instructions.md`) | Living project state: strategy, decisions, next steps | Every session |
+| **This file** (`.claude/instructions.md`) | **THE PLAN:** living project state, strategy, phased roadmap, decisions log | Every session |
 | `CLAUDE.md` | Static reference: code conventions, architecture, experiment protocol | Rarely |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log (table of all experiments) | After every experiment |
 
-**Do not create new documentation files.** If it's living state, it goes here. If it's static reference, it goes in `CLAUDE.md`. If it's an experiment record, it goes in `EXPERIMENTS_INDEX.md`.
+### Documentation Rules
+
+- **Do not create separate plan files.** All planning, strategy, roadmap, and decision content lives HERE.
+- If a sub-plan is absolutely necessary (e.g., a complex multi-step investigation), it MUST be explicitly referenced from this file with a clear link and status.
+- Currently there is one archived sub-plan: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED 2026-01-21, DDPM abandoned).
+- **Do not create new documentation files.** If it's living state/planning, it goes here. If it's static reference, it goes in `CLAUDE.md`. If it's an experiment record, it goes in `EXPERIMENTS_INDEX.md`.
 
 ---
 
