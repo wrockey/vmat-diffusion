@@ -4,9 +4,9 @@
 
 VMAT Diffusion is a deep learning research project for automated **Volumetric Modulated Arc Therapy (VMAT) dose prediction** in radiation therapy. It uses diffusion models (DDPM) and baseline U-Net architectures to predict 3D dose distributions from patient CT scans, organ contours, and clinical dose constraints.
 
-**Disease site:** Prostate cancer with SIB (70 Gy / 56 Gy in 28 fractions)
+**Disease site:** Prostate cancer with SIB (70 Gy PTV70=prostate / 56 Gy PTV56=seminal vesicles in 28 fractions)
 **Current dataset:** 24 cases (23 usable), expecting 100-150 near-term
-**Clinical target:** Gamma pass rate > 95% (3%/3mm), MAE < 3 Gy
+**Clinical targets (updated 2026-02-17):** PTV70 D95 >= 66.5 Gy, PTV56 D95 >= 53.2 Gy, OAR DVH compliance, PTV-region Gamma > 95%. Global Gamma tracked as diagnostic only — see `.claude/instructions.md` for full priority table.
 
 ## Repository Structure
 
@@ -22,6 +22,8 @@ vmat-diffusion/
 │   ├── analyze_gamma_metric_hypothesis.py
 │   ├── compute_test_metrics.py       # Standalone test evaluation
 │   ├── generate_*_figures.py         # Publication figure scripts (6 variants)
+│   ├── uncertainty_loss.py           # UncertaintyWeightedLoss (Kendall 2018) for Phase 2
+│   ├── calibrate_loss_normalization.py # Loss calibration for initial_log_sigma values
 │   ├── training_watchdog.sh          # Auto-recovery for hung training
 │   └── deprecated/                   # Old script versions
 ├── notebooks/                        # Jupyter experiment notebooks

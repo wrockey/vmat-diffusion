@@ -29,7 +29,7 @@
 
 ---
 
-## STRATEGIC DIRECTION (Updated 2026-02-13)
+## STRATEGIC DIRECTION (Updated 2026-02-17)
 
 ### Primary Goal: Clinical Acceptability (NOT Global Gamma)
 
@@ -79,7 +79,7 @@ All components already implemented in prior experiments — need to combine with
 
 ---
 
-## CURRENT STATE (as of 2026-02-13)
+## CURRENT STATE (as of 2026-02-17)
 
 ### Transition: Home (Pilot) → Work (Production)
 
@@ -108,9 +108,15 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 ### Key Findings from Pilot
 
 - **PTV-region Gamma** (41.5%) much higher than overall (31.2%) — confirms model is more accurate where it matters clinically.
-- **Ground truth PTV70 D95** was 55 Gy — failed 66.5 Gy clinical threshold by 11.5 Gy. Re-evaluate with 100+ cases.
-- **All models pass OAR constraints** but systematically underdose PTVs.
+- **Ground truth PTV70 D95 reads 55 Gy** — now identified as a **pipeline artifact** (PTV mask/dose grid boundary mismatch), NOT a clinical finding. All delivered plans have D95 >= 66.5 Gy. Priority fix for Phase 0. See decisions log 2026-02-17.
+- **Pilot Gamma (28-31% global)** is in line with the field at n=23 — literature benchmarks show 75-85% at n=50-100. Not a model failure. Expect 75-88% global / 90-95% PTV-region with 100+ cases.
+- **All models pass OAR constraints** but D95 gap appeared to show systematic PTV underdosing (may be partly or fully explained by the D95 artifact above).
 - **Gradient loss is essential** — nearly doubled Gamma for free.
+
+### New Phase 2 Utilities (added 2026-02-17)
+
+- `scripts/uncertainty_loss.py` — UncertaintyWeightedLoss module (Kendall et al. 2018). Ready to import; replaces manual loss weight tuning.
+- `scripts/calibrate_loss_normalization.py` — Loss calibration script. Loads NPZ files, computes average raw loss values, recommends `initial_log_sigma` per component. Has stub loss functions — replace with real implementations during Phase 2 setup.
 
 ---
 
