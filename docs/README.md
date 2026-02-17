@@ -1,3 +1,7 @@
+> **SUPERSEDED (2026-02-17)** — This document is historical. It describes the original DDPM-focused project plan.
+> The DDPM approach was abandoned in favor of a baseline U-Net with loss-function engineering.
+> For current project state: see `.claude/instructions.md`. For code conventions: see `CLAUDE.md`.
+
 # VMAT Dose Prediction using Conditional Diffusion Models
 
 A deep learning pipeline for predicting 3D radiation dose distributions from CT scans and anatomical structures using Denoising Diffusion Probabilistic Models (DDPM).

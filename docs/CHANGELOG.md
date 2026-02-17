@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-02-17)** — This changelog was last maintained through January 2025 and does not
+> cover the loss function experiments (gradient, DVH-aware, structure-weighted, asymmetric PTV)
+> or the pilot-to-production transition. For current project state: see `.claude/instructions.md`.
+> For experiment history: see `notebooks/EXPERIMENTS_INDEX.md`. Change tracking is now done
+> via git log and the experiment index rather than this file.
+
 # Changelog
 
 All notable changes to the VMAT Diffusion project will be documented in this file.

@@ -137,6 +137,13 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 5. Verify preprocessing: spot-check 3-5 cases with `notebooks/verify_npz.ipynb`
 6. **Fix D95 pipeline artifact** — GT PTV70 D95 reads 55 Gy but clinical plans guarantee >= 66.5 Gy. Root cause: PTV mask/dose grid boundary mismatch (see 2026-02-17 decision). Verify by: (a) eroding PTV mask by 1-2mm and recomputing D95, (b) checking dose grid coverage vs PTV extent, (c) comparing binary mask vs SDF-derived mask boundary. Must resolve before any DVH-based evaluation is meaningful.
 7. Update PLATFORM REFERENCE section below with work machine paths
+8. **Data provenance & ethics (required for Medical Physics submission):**
+   - IRB approval status and protocol number (TBD)
+   - Anonymization method (DICOM de-identification procedure)
+   - Informed consent / waiver documentation
+   - Case mapping: which raw DICOMs map to which NPZ case IDs
+   - Data availability statement for publication (will data be shared? TCIA deposit?)
+   - Record exclusion criteria and any cases excluded with reasons
 
 ### Phase 1: Clinical Evaluation Framework
 
@@ -167,6 +174,12 @@ Skip individual loss ablations (already done in pilot). Go straight to the combi
 - At 50% training, run 5-epoch ablation: turn each loss on/off one at a time
 - Verifies whether pilot loss rankings hold on the larger dataset
 - Pilot rankings have ~40-60% chance of shifting at n=100+ (structure-weighted and DVH losses most likely to stay strong; asymmetric PTV may weaken or strengthen)
+
+**Multi-seed runs (required for publication):**
+- Minimum 3 seeds: 42, 123, 789
+- Report mean +/- std for all primary metrics (MAE, Gamma, D95, DVH compliance)
+- Paired Wilcoxon signed-rank test for key comparisons (combined loss vs best individual loss)
+- Per-case results table in notebook (enables paired analysis)
 
 Evaluate with the clinical framework from Phase 1. With 100+ cases, expect:
 - 10-15 test cases (statistically meaningful)
@@ -249,7 +262,7 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 ### Troubleshooting
 
-Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/training_guide.md`.
+Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/training_guide.md` (partially superseded — DDPM architecture sections are historical, but troubleshooting/GPU/monitoring sections remain valid).
 
 ---
 

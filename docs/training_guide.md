@@ -1,3 +1,8 @@
+> **PARTIALLY SUPERSEDED (2026-02-17)** — The DDPM-specific sections (architecture, diffusion process,
+> DDIM sampling) are historical — the primary model is now the baseline U-Net. However, the general
+> training infrastructure sections (patch-based training, augmentation, troubleshooting, GPU stability,
+> monitoring, reproducibility) are still applicable. For current project state: see `.claude/instructions.md`.
+
 # VMAT Dose DDPM Training Guide
 
 ## Overview

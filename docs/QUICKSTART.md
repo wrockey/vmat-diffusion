@@ -1,3 +1,8 @@
+> **SUPERSEDED (2026-02-17)** — This quickstart guide is from the initial DDPM-focused phase.
+> The primary model is now the baseline U-Net with loss-function engineering (not DDPM).
+> For current commands and workflow: see `CLAUDE.md` (section "Key Commands").
+> For project state: see `.claude/instructions.md`.
+
 # VMAT Dose Prediction: Quickstart Guide
 
 Complete workflow from raw DICOM data to trained model evaluation.

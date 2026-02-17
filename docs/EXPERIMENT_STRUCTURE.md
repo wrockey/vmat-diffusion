@@ -1,3 +1,6 @@
+> **SUPERSEDED (2026-02-17)** — This document is historical. The experiment protocol is now defined in
+> `CLAUDE.md` (section "Experiment Documentation Requirements"). For project state: see `.claude/instructions.md`.
+
 # Experiment Organization Structure
 
 **This document defines the standard structure for all experiments.**

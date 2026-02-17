@@ -1,3 +1,7 @@
+> **PARTIALLY SUPERSEDED (2026-02-17)** — The DDPM-specific assumptions (diffusion process, noise schedule,
+> DDIM sampling) are historical. Data assumptions, augmentation assumptions, and hardware requirements
+> are still applicable to the baseline U-Net. For current project state: see `.claude/instructions.md`.
+
 # Training Assumptions and Requirements
 
 This document lists all assumptions made by the training pipeline. Understanding these assumptions is critical for reproducing results and troubleshooting issues.

@@ -1,3 +1,8 @@
+> **SUPERSEDED (2026-02-17)** — Most of this content has been consolidated into `CLAUDE.md`
+> (experiment protocol, figure standards, code conventions) and `.claude/instructions.md` (publication strategy).
+> The code snippets below (confidence intervals, DVH computation, gamma API, matplotlib config)
+> may still be useful as quick reference.
+
 # Scientific Best Practices for VMAT Diffusion Project
 
 This document outlines best practices for maintaining scientific rigor, reproducibility, and publication-readiness throughout the project.
