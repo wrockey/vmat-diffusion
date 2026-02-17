@@ -39,8 +39,8 @@
 
 | Priority | Metric | Target | Rationale |
 |----------|--------|--------|-----------|
-| CRITICAL | PTV70 D95 | >= 66.5 Gy (95% of 70 Gy) | Target coverage drives patient outcome |
-| CRITICAL | PTV56 D95 | >= 53.2 Gy (95% of 56 Gy) | Elective target coverage |
+| CRITICAL | PTV70 D95 | >= 66.5 Gy (95% of 70 Gy) | Prostate coverage — drives patient outcome |
+| CRITICAL | PTV56 D95 | >= 53.2 Gy (95% of 56 Gy) | Seminal vesicle coverage (dose-painted SIB) |
 | CRITICAL | OAR DVH compliance | Per QUANTEC limits | Organ sparing |
 | HIGH | PTV-region Gamma (3%/3mm) | > 95% | Accuracy where it matters clinically |
 | HIGH | Dose gradient realism | Monotonic falloff from PTV, ~6mm penumbra | Proxy for physical deliverability |
@@ -123,7 +123,8 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 3. Collect and anonymize 100+ DICOM-RT cases
 4. Preprocess all cases: `python scripts/preprocess_dicom_rt_v2.2.py --skip_plots`
 5. Verify preprocessing: spot-check 3-5 cases with `notebooks/verify_npz.ipynb`
-6. Update PLATFORM REFERENCE section below with work machine paths
+6. **Fix D95 pipeline artifact** — GT PTV70 D95 reads 55 Gy but clinical plans guarantee >= 66.5 Gy. Root cause: PTV mask/dose grid boundary mismatch (see 2026-02-17 decision). Verify by: (a) eroding PTV mask by 1-2mm and recomputing D95, (b) checking dose grid coverage vs PTV extent, (c) comparing binary mask vs SDF-derived mask boundary. Must resolve before any DVH-based evaluation is meaningful.
+7. Update PLATFORM REFERENCE section below with work machine paths
 
 ### Phase 1: Clinical Evaluation Framework
 
@@ -182,7 +183,7 @@ Key decisions with rationale. Do not revisit without new evidence.
 | 2026-02-17 | **Add OAR contour perturbation to Phase 3 augmentation** | Small random shifts to structure boundaries simulate inter-observer contouring variability — a real clinical source of diversity. More clinically motivated than generic elastic deformation alone. Suggested by external review. |
 | 2026-02-13 | **Start clean on work machine with 100+ cases** | 23-case pilot validated methodology and loss design; trained weights are throwaway; code + docs are the deliverable; n=2 test set not statistically meaningful; 100+ cases needed for publishable results |
 | 2026-02-13 | **Shift primary metric from global Gamma to DVH compliance + PTV Gamma + gradient realism** | Global Gamma penalizes valid low-dose diversity; PTV Gamma (41.5%) is much higher than overall (31.2%); DVH compliance + physical realism are what clinicians actually evaluate |
-| 2026-01-23 | Ground truth itself fails clinical D95 threshold | GT PTV70 D95 = 55 Gy vs 66.5 Gy threshold; dataset may have non-standard planning; re-evaluate with more data |
+| 2026-02-17 | **GT D95 = 55 Gy is a pipeline artifact, NOT a clinical finding** | Clinical confirmation: all delivered prostate VMAT plans have PTV70 D95 >= 66.5 Gy (95% of 70 Gy) — plans failing this are rejected and re-optimized. The 55 Gy reading is caused by PTV mask/dose grid boundary mismatch: linear dose interpolation smooths steep falloff at PTV edge + mask may extend 1-2 voxels beyond TPS boundary into falloff zone. ~5% of PTV voxels in falloff → D95 drops to 55 Gy. Fix: erode PTV mask 1-2mm before D95 evaluation, or verify dose grid fully covers PTV. Priority fix for Phase 0. Replaces 2026-01-23 entry. |
 | 2026-01-21 | Dose prediction is semi-multi-modal | Low-dose regions are flexible; multiple valid solutions exist; pure pixel-wise metrics penalize valid diversity |
 | 2026-01-21 | VGG perceptual loss not useful | Improves MAE but NOT Gamma; adds 5x training time |
 | 2026-01-20 | DDPM not recommended | Matches baseline but doesn't beat it; structural mismatch (more steps = worse); near-zero sample variability means it's not generative; added complexity with no benefit. May revisit with physics-bounded approach if simpler methods plateau. |
