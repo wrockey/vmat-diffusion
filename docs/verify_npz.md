@@ -1,3 +1,6 @@
+> **CURRENT REFERENCE** — This document is active and accurate for the NPZ verification notebook.
+> For project strategy: see `.claude/instructions.md`.
+
 # NPZ Verification Notebook Documentation
 
 ## Overview

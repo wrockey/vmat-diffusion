@@ -1,3 +1,6 @@
+> **CURRENT REFERENCE** — This preprocessing guide is active and accurate for `preprocess_dicom_rt_v2.2.py`.
+> For project strategy: see `.claude/instructions.md`. For data assumptions: see `docs/preprocessing_assumptions.md`.
+
 # VMAT Preprocessing Guide
 
 ## Overview

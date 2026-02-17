@@ -1,3 +1,6 @@
+> **CURRENT REFERENCE** — These preprocessing assumptions are active and accurate for `preprocess_dicom_rt_v2.2.py`.
+> For project strategy: see `.claude/instructions.md`.
+
 # Preprocessing Assumptions and Requirements
 
 This document lists all assumptions made by the preprocessing pipeline. Data that violates these assumptions may produce incorrect results or errors.

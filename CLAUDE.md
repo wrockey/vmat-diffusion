@@ -140,15 +140,14 @@ python scripts/train_dose_ddpm_v2.py --data_dir /path/to/processed_npz --epochs 
 ```
 
 ### Model: BaselineUNet3D (primary)
-- 3D U-Net with constraint conditioning via embedding
-- 4 encoder/decoder levels (32→64→128→256 channels)
-- Skip connections, SiLU activations
+- 3D U-Net with constraint conditioning via FiLM embedding
+- 5 resolution levels, base_channels=48 (48→96→192→384→768)
+- Skip connections, SiLU activations, GroupNorm
 - ~23.7M parameters
 
 ### Model: DoseDDPM (experimental, not recommended)
-- Conditional DDPM with cosine noise schedule
-- DDIM sampling (50 steps optimal)
-- Same U-Net backbone with time embedding
+- Conditional DDPM with cosine noise schedule, DDIM sampling (50 steps)
+- SimpleUNet3D backbone with time embedding, base_channels=32 (32→64→128→256)
 - Matches but does not beat baseline; added complexity without benefit
 
 ## Code Conventions

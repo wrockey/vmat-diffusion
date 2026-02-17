@@ -135,7 +135,7 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 3. Collect and anonymize 100+ DICOM-RT cases
 4. Preprocess all cases: `python scripts/preprocess_dicom_rt_v2.2.py --skip_plots`
 5. Verify preprocessing: spot-check 3-5 cases with `notebooks/verify_npz.ipynb`
-6. **Fix D95 pipeline artifact** — GT PTV70 D95 reads 55 Gy but clinical plans guarantee >= 66.5 Gy. Root cause: PTV mask/dose grid boundary mismatch (see 2026-02-17 decision). Verify by: (a) eroding PTV mask by 1-2mm and recomputing D95, (b) checking dose grid coverage vs PTV extent, (c) comparing binary mask vs SDF-derived mask boundary. Must resolve before any DVH-based evaluation is meaningful.
+6. **Fix D95 pipeline artifact** — GT PTV70 D95 reads 55 Gy but clinical plans guarantee >= 66.5 Gy. Root cause: PTV mask/dose grid boundary mismatch (see 2026-02-17 decision). Verify by: (a) eroding PTV mask by 1-2mm and recomputing D95, (b) checking dose grid coverage vs PTV extent, (c) comparing binary mask vs SDF-derived mask boundary. Must resolve before any DVH-based evaluation is meaningful. **Success criterion:** After fix, GT D95 on all training cases reads >= 66.5 Gy, consistent with clinical ground truth. Verify fix does not break structure-weighted or DVH loss computations.
 7. Update PLATFORM REFERENCE section below with work machine paths
 8. **Data provenance & ethics (required for Medical Physics submission):**
    - IRB approval status and protocol number (TBD)
@@ -150,7 +150,7 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 Build before training anything — defines what "good" means on the new dataset:
 
 - Per-structure DVH compliance (pass/fail per QUANTEC constraint)
-- PTV-only Gamma (3%/3mm)
+- PTV-region Gamma (3%/3mm): evaluate on all voxels within the union of PTV70 and PTV56 binary masks. Report per-structure and combined. Compute at multiple dose thresholds (no threshold, >5%, >10%, >20%) — report all, justify primary choice.
 - Dose gradient/falloff analysis: monotonicity, penumbra width
 - Single "clinical acceptability" report per case
 - Validate ground truth D95 thresholds on the larger dataset
@@ -199,6 +199,11 @@ Depending on Phase 2 outcomes:
   - Standard geometric (torchio: random affine, elastic deformation, flip)
   - **OAR contour perturbations** — small random shifts to structure boundaries to simulate inter-observer contouring variability. Clinically motivated augmentation. (Suggested by external review, 2026-02-17.)
   - Random constraint vector perturbations (small noise on OAR limits)
+
+**Publication preparation (after Phase 2 results are final):**
+- **Failure case report:** Identify bottom 10% of cases by Gamma/DVH. Categorize failure modes (anatomical complexity, contour ambiguity, constraint conflicts). Propose case-specific mitigations.
+- **Code release:** Anonymize code (remove internal paths, institution identifiers). Freeze dependencies (export exact conda environment). Prepare GitHub/Zenodo release with DOI.
+- **External validation statement:** If single-institution, explicitly document as limitation and state plan for multi-site follow-up study.
 
 ### Parking Lot (revisit only if above plateaus)
 

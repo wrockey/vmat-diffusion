@@ -1,13 +1,12 @@
+> **SUPERSEDED (2026-01-21)** — DDPM approach was abandoned after strategic assessment showed it
+> does not outperform the baseline U-Net. For current project state: see `.claude/instructions.md`.
+> For experiment history: see `notebooks/EXPERIMENTS_INDEX.md`.
+
 # DDPM Optimization Plan
 
 **Created:** 2026-01-20
-**Status:** ⚠️ ARCHIVED - DDPM NOT RECOMMENDED
+**Status:** ARCHIVED - DDPM NOT RECOMMENDED
 **Goal:** Systematically investigate why DDPM underperforms baseline and identify improvements
-
-> **📋 NOTE (2026-01-21):** This plan is archived. DDPM was found to be unsuitable for dose prediction.
-> For the current path forward (loss function improvements targeting 95% Gamma), see:
-> - `.claude/instructions.md` - Decision tree and experiment priority queue
-> - `notebooks/EXPERIMENTS_INDEX.md` - Authoritative experiment TODO list
 
 ---
 
