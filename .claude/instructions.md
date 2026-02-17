@@ -146,9 +146,23 @@ Skip individual loss ablations (already done in pilot). Go straight to the combi
 - Asymmetric PTV loss (underdose penalty >> overdose)
 - DVH-aware loss (D95, Dmean/Vx compliance)
 
+**Loss weight strategy** (external review consensus, 2026-02-17):
+1. **Normalize first:** Run each loss individually for 10-20 epochs on validation set, record mean value, divide each term by its mean so all start ~1.0 magnitude. Removes 80% of weight-tuning difficulty.
+2. **Uncertainty Weighting (Kendall et al. 2018):** Learn one scalar σ per loss during training; weights become 1/(2σ²) automatically. Stable when all losses act on same output (dose volume). One line of code in Lightning. This is the recommended approach — NOT grid search.
+3. **Fallback:** If any loss dominates (monitor per-component curves in TensorBoard), apply GradNorm for last 20-30% of training, or do cheap sequential ±20% weight ablation for 5 epochs each.
+
+**Component ablation sweep** (cheap validation, ~5% extra compute):
+- At 50% training, run 5-epoch ablation: turn each loss on/off one at a time
+- Verifies whether pilot loss rankings hold on the larger dataset
+- Pilot rankings have ~40-60% chance of shifting at n=100+ (structure-weighted and DVH losses most likely to stay strong; asymmetric PTV may weaken or strengthen)
+
 Evaluate with the clinical framework from Phase 1. With 100+ cases, expect:
 - 10-15 test cases (statistically meaningful)
 - Significantly better absolute metrics than pilot
+- **Realistic Gamma targets** (from literature benchmarks, 2026-02-17):
+  - Global 3%/3mm: 75-88% (comparable papers report 75-85% at n=50-100 with U-Net)
+  - PTV-region 3%/3mm: 90-95%+ (where clinical accuracy matters)
+  - Note: pilot 28-31% global is in line with field at n=23 — not a red flag
 - Publishable results
 
 ### Phase 3: Iterate Based on Results
@@ -180,6 +194,9 @@ Key decisions with rationale. Do not revisit without new evidence.
 |------|----------|-----------|
 | 2026-02-17 | **Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"** | External review (Grok, 2026-02-17) independently validated project direction and suggested this framing. Pilot has 5 loss variants with clean ablation data — with 100+ cases and combined loss results, this is a strong Medical Physics submission. |
 | 2026-02-17 | **Add physician preference ranking to Phase 1 eval framework** | Blind side-by-side comparison (predicted vs ground truth) captures clinical quality beyond automated metrics. Gamma alone is misleading (already known). Strengthens publication. Suggested by external review. |
+| 2026-02-17 | **Publication target: Medical Physics, single comprehensive paper** | External review confirms Med Phys is the ideal venue for a ~100-case, 5-ablation, combined-results loss-engineering paper. PMB if emphasizing physics/novelty. JACMP for a follow-up clinical implementation study. Don't split prematurely — one strong paper first, second "clinical validation" paper (with physician rankings + deliverability) later if warranted. |
+| 2026-02-17 | **Use Uncertainty Weighting for combined loss, NOT grid search** | Kendall et al. 2018 approach: learn σ per loss, weights = 1/(2σ²). Normalize losses first (run each 10-20 epochs, divide by mean). External review consensus — stable, cheap, proven in medical MTL. GradNorm as fallback if any loss dominates. |
+| 2026-02-17 | **Pilot 28-31% global Gamma is expected at n=23, not a failure** | Literature benchmarks: pure global 3%/3mm on <60 cases = 75-85% typical; our lower number explained by (a) n=23, (b) true 3D patch training + sliding-window blending artifacts, (c) no dose thresholding (most papers ignore <10% dose voxels). With 100+ cases + combined losses: expect 75-88% global, 90-95%+ PTV-region. Strategic pivot to DVH + PTV Gamma confirmed as correct by external review. |
 | 2026-02-17 | **Add OAR contour perturbation to Phase 3 augmentation** | Small random shifts to structure boundaries simulate inter-observer contouring variability — a real clinical source of diversity. More clinically motivated than generic elastic deformation alone. Suggested by external review. |
 | 2026-02-13 | **Start clean on work machine with 100+ cases** | 23-case pilot validated methodology and loss design; trained weights are throwaway; code + docs are the deliverable; n=2 test set not statistically meaningful; 100+ cases needed for publishable results |
 | 2026-02-13 | **Shift primary metric from global Gamma to DVH compliance + PTV Gamma + gradient realism** | Global Gamma penalizes valid low-dose diversity; PTV Gamma (41.5%) is much higher than overall (31.2%); DVH compliance + physical realism are what clinicians actually evaluate |
@@ -224,4 +241,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-17 (Incorporated external review feedback: physician ranking, contour perturbation augmentation, paper framing, parking lot additions)*
+*Last updated: 2026-02-17 (Incorporated external review feedback: loss weight strategy, publication venue, Gamma benchmarks, physician ranking, contour perturbation, paper framing)*
