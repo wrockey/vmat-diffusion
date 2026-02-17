@@ -134,6 +134,7 @@ Build before training anything — defines what "good" means on the new dataset:
 - Dose gradient/falloff analysis: monotonicity, penumbra width
 - Single "clinical acceptability" report per case
 - Validate ground truth D95 thresholds on the larger dataset
+- **Physician preference ranking** (blind side-by-side: predicted vs ground truth vs alternative plans). Strengthens publication and captures clinical quality beyond automated metrics. (Suggested by external review, 2026-02-17.)
 
 ### Phase 2: Combined Loss — First Real Experiment
 
@@ -154,14 +155,18 @@ Evaluate with the clinical framework from Phase 1. With 100+ cases, expect:
 Depending on Phase 2 outcomes:
 - If DVH compliance is close but not there → tune loss weights
 - If architecture is the bottleneck → try attention U-Net or deeper network
-- If data diversity is still limiting → add augmentation (torchio)
+- If data diversity is still limiting → add augmentation:
+  - Standard geometric (torchio: random affine, elastic deformation, flip)
+  - **OAR contour perturbations** — small random shifts to structure boundaries to simulate inter-observer contouring variability. Clinically motivated augmentation. (Suggested by external review, 2026-02-17.)
+  - Random constraint vector perturbations (small noise on OAR limits)
 
 ### Parking Lot (revisit only if above plateaus)
 
 - Adversarial loss (PatchGAN) for edge sharpness
-- Flow Matching (generative: sample single plausible solutions instead of averaging)
+- Flow Matching / Consistency Models (generative: sample single plausible solutions instead of averaging)
 - Physics-bounded DDPM (region-aware noise schedules)
 - nnU-Net, Swin-UNETR (architecture alternatives)
+- Lightweight cross-attention or Swin blocks in bottleneck only (VRAM-conscious)
 - Ensemble of existing models (quick experiment: average predictions)
 
 ---
@@ -172,6 +177,9 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-17 | **Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"** | External review (Grok, 2026-02-17) independently validated project direction and suggested this framing. Pilot has 5 loss variants with clean ablation data — with 100+ cases and combined loss results, this is a strong Medical Physics submission. |
+| 2026-02-17 | **Add physician preference ranking to Phase 1 eval framework** | Blind side-by-side comparison (predicted vs ground truth) captures clinical quality beyond automated metrics. Gamma alone is misleading (already known). Strengthens publication. Suggested by external review. |
+| 2026-02-17 | **Add OAR contour perturbation to Phase 3 augmentation** | Small random shifts to structure boundaries simulate inter-observer contouring variability — a real clinical source of diversity. More clinically motivated than generic elastic deformation alone. Suggested by external review. |
 | 2026-02-13 | **Start clean on work machine with 100+ cases** | 23-case pilot validated methodology and loss design; trained weights are throwaway; code + docs are the deliverable; n=2 test set not statistically meaningful; 100+ cases needed for publishable results |
 | 2026-02-13 | **Shift primary metric from global Gamma to DVH compliance + PTV Gamma + gradient realism** | Global Gamma penalizes valid low-dose diversity; PTV Gamma (41.5%) is much higher than overall (31.2%); DVH compliance + physical realism are what clinicians actually evaluate |
 | 2026-01-23 | Ground truth itself fails clinical D95 threshold | GT PTV70 D95 = 55 Gy vs 66.5 Gy threshold; dataset may have non-standard planning; re-evaluate with more data |
@@ -215,4 +223,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-13 (Transition plan: home pilot complete, starting clean on work machine with 100+ cases)*
+*Last updated: 2026-02-17 (Incorporated external review feedback: physician ranking, contour perturbation augmentation, paper framing, parking lot additions)*
