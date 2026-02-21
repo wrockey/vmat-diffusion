@@ -4,18 +4,24 @@
 **It contains strategy, current state, the phased roadmap, and all decisions.**
 **It is automatically loaded every session. Keep it current.**
 
+## Documentation & Tracking Hierarchy
+
 | Document | Role | Update when |
 |----------|------|-------------|
-| **This file** (`.claude/instructions.md`) | **THE PLAN:** living project state, strategy, phased roadmap, decisions log | Every session |
-| `CLAUDE.md` | Static reference: code conventions, architecture, experiment protocol | Rarely |
+| **This file** (`.claude/instructions.md`) | **THE PLAN:** strategy, current state, phased roadmap overview, decisions summary | Every session |
+| `CLAUDE.md` | Static reference: code conventions, architecture, experiment protocol, GitHub workflow | Rarely |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log (table of all experiments) | After every experiment |
+| **GitHub Issues** | Individual tasks, bugs, backburner ideas, decision records, experiment plans | As work progresses |
+| **GitHub Milestones** | Phase-level progress tracking (Phase 0–3) | When issues are closed |
 
 ### Documentation Rules
 
 - **Do not create separate plan files.** All planning, strategy, roadmap, and decision content lives HERE.
-- If a sub-plan is absolutely necessary (e.g., a complex multi-step investigation), it MUST be explicitly referenced from this file with a clear link and status.
+- **Individual tasks and TODOs go in GitHub Issues**, not in this file. This file contains the *overview*; issues contain the *details*.
+- **Decision records** live as GitHub Issues with the `type/decision` label. This file has a summary table; issues have the full rationale.
+- If a sub-plan is absolutely necessary, it MUST be explicitly referenced from this file with a clear link and status.
 - Currently there is one archived sub-plan: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED 2026-01-21, DDPM abandoned).
-- **Do not create new documentation files.** If it's living state/planning, it goes here. If it's static reference, it goes in `CLAUDE.md`. If it's an experiment record, it goes in `EXPERIMENTS_INDEX.md`.
+- **Do not create new documentation files.** If it's living state/planning, it goes here. If it's static reference, it goes in `CLAUDE.md`. If it's an experiment record, it goes in `EXPERIMENTS_INDEX.md`. If it's a task, it's a GitHub Issue.
 
 ---
 
@@ -32,6 +38,8 @@
 2. **This file is updated at the end of every work session.** Move completed work, update the performance table, record new decisions.
 
 3. **Figures are publication-ready from the start.** Serif font, 12pt minimum, 300 DPI, colorblind-friendly, labeled axes with units, legends, captions with clinical interpretation. No exceptions.
+
+4. **Tasks are tracked in GitHub Issues.** Before starting work, check open issues. When work completes, close the issue with a reference to the commit. When new tasks emerge, create issues.
 
 ---
 
@@ -85,7 +93,7 @@ All components already implemented in prior experiments — need to combine with
 
 ---
 
-## CURRENT STATE (as of 2026-02-17)
+## CURRENT STATE (as of 2026-02-21)
 
 ### Transition: Home (Pilot) → Work (Production)
 
@@ -119,121 +127,98 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 - **All models pass OAR constraints** but D95 gap appeared to show systematic PTV underdosing (may be partly or fully explained by the D95 artifact above).
 - **Gradient loss is essential** — nearly doubled Gamma for free.
 
-### New Phase 2 Utilities (added 2026-02-17)
+### Phase 2 Utilities (added 2026-02-17)
 
 - `scripts/uncertainty_loss.py` — UncertaintyWeightedLoss module (Kendall et al. 2018). Ready to import; replaces manual loss weight tuning.
-- `scripts/calibrate_loss_normalization.py` — Loss calibration script. Loads NPZ files, computes average raw loss values, recommends `initial_log_sigma` per component. Has stub loss functions — replace with real implementations during Phase 2 setup.
+- `scripts/calibrate_loss_normalization.py` — Loss calibration script. Has stub loss functions — see GitHub issue for replacing with real implementations.
 
 ---
 
-## NEXT STEPS (Prioritized)
+## ROADMAP OVERVIEW
 
-### Phase 0: Work Machine Setup (NOW)
+Detailed tasks for each phase are tracked as **GitHub Issues** with phase labels and milestones. This section provides the strategic overview only.
 
-1. Clone repo to work machine, install conda environment (`environment.yml`)
-2. Verify GPU access: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
-3. Collect and anonymize 100+ DICOM-RT cases
-4. Preprocess all cases: `python scripts/preprocess_dicom_rt_v2.2.py --skip_plots`
-5. Verify preprocessing: spot-check 3-5 cases with `notebooks/verify_npz.ipynb`
-6. **Fix D95 pipeline artifact** — GT PTV70 D95 reads 55 Gy but clinical plans guarantee >= 66.5 Gy. Root cause: PTV mask/dose grid boundary mismatch (see 2026-02-17 decision). Verify by: (a) eroding PTV mask by 1-2mm and recomputing D95, (b) checking dose grid coverage vs PTV extent, (c) comparing binary mask vs SDF-derived mask boundary. Must resolve before any DVH-based evaluation is meaningful. **Success criterion:** After fix, GT D95 on all training cases reads >= 66.5 Gy, consistent with clinical ground truth. Verify fix does not break structure-weighted or DVH loss computations.
-7. Update PLATFORM REFERENCE section below with work machine paths
-8. **Data provenance & ethics (required for Medical Physics submission):**
-   - IRB approval status and protocol number (TBD)
-   - Anonymization method (DICOM de-identification procedure)
-   - Informed consent / waiver documentation
-   - Case mapping: which raw DICOMs map to which NPZ case IDs
-   - Data availability statement for publication (will data be shared? TCIA deposit?)
-   - Record exclusion criteria and any cases excluded with reasons
+### Phase 0: Work Machine Setup — Milestone: `Phase 0: Setup`
 
-### Phase 1: Clinical Evaluation Framework
+**Goal:** Production environment ready with 100+ cases and fixed evaluation pipeline.
 
-Build before training anything — defines what "good" means on the new dataset:
+Key items (see GitHub Issues with `phase/0-setup` label):
+- WSL environment setup on work machine
+- Collect and anonymize 100+ DICOM-RT cases
+- Preprocess all cases
+- **Fix D95 pipeline artifact** (CRITICAL — blocks all DVH evaluation)
+- Document data provenance and ethics for publication
 
-- Per-structure DVH compliance (pass/fail per QUANTEC constraint)
-- PTV-region Gamma (3%/3mm): evaluate on all voxels within the union of PTV70 and PTV56 binary masks. Report per-structure and combined. Compute at multiple dose thresholds (no threshold, >5%, >10%, >20%) — report all, justify primary choice.
-- Dose gradient/falloff analysis: monotonicity, penumbra width
-- Single "clinical acceptability" report per case
-- Validate ground truth D95 thresholds on the larger dataset
-- **Physician preference ranking** (blind side-by-side: predicted vs ground truth vs alternative plans). Strengthens publication and captures clinical quality beyond automated metrics. (Suggested by external review, 2026-02-17.)
+### Phase 1: Clinical Evaluation Framework — Milestone: `Phase 1: Evaluation Framework`
 
-### Phase 2: Combined Loss — First Real Experiment
+**Goal:** Define what "good" means before training anything on the new dataset.
 
-Skip individual loss ablations (already done in pilot). Go straight to the combined loss:
+Key items (see GitHub Issues with `phase/1-eval` label):
+- Per-structure DVH compliance evaluation
+- PTV-region Gamma at multiple dose thresholds
+- Dose gradient/falloff analysis
+- Single-case clinical acceptability report
+- Physician preference ranking study (plan early, execute after Phase 2)
 
-- Gradient loss (3D Sobel, weight 0.1)
-- Structure-weighted loss (2x PTV, 1.5x OAR boundary, 0.1x background)
-- Asymmetric PTV loss (underdose penalty >> overdose)
-- DVH-aware loss (D95, Dmean/Vx compliance)
+### Phase 2: Combined Loss Experiment — Milestone: `Phase 2: Combined Loss`
 
-**Loss weight strategy** (external review consensus, 2026-02-17):
-1. **Normalize first:** Run each loss individually for 10-20 epochs on validation set, record mean value, divide each term by its mean so all start ~1.0 magnitude. Removes 80% of weight-tuning difficulty.
-2. **Uncertainty Weighting (Kendall et al. 2018):** Learn one scalar σ per loss during training; weights become 1/(2σ²) automatically. Stable when all losses act on same output (dose volume). One line of code in Lightning. This is the recommended approach — NOT grid search.
-3. **Fallback:** If any loss dominates (monitor per-component curves in TensorBoard), apply GradNorm for last 20-30% of training, or do cheap sequential ±20% weight ablation for 5 epochs each.
+**Goal:** First publishable experiment — combined 5-component loss with uncertainty weighting.
 
-**Component ablation sweep** (cheap validation, ~5% extra compute):
-- At 50% training, run 5-epoch ablation: turn each loss on/off one at a time
-- Verifies whether pilot loss rankings hold on the larger dataset
-- Pilot rankings have ~40-60% chance of shifting at n=100+ (structure-weighted and DVH losses most likely to stay strong; asymmetric PTV may weaken or strengthen)
+Key items (see GitHub Issues with `phase/2-combined` label):
+- Replace calibration script stubs with real loss functions
+- Extend UncertaintyWeightedLoss for per-component initialization
+- Integrate combined loss into training script
+- Run 3-seed experiment on 100+ cases with mid-training ablation
 
-**Multi-seed runs (required for publication):**
-- Minimum 3 seeds: 42, 123, 789
-- Report mean +/- std for all primary metrics (MAE, Gamma, D95, DVH compliance)
-- Paired Wilcoxon signed-rank test for key comparisons (combined loss vs best individual loss)
-- Per-case results table in notebook (enables paired analysis)
+**Loss weight strategy** (decided 2026-02-17):
+1. **Normalize first:** Calibrate with real losses → `loss_normalization_calib.json`
+2. **Uncertainty Weighting (Kendall 2018):** Learn σ per loss, weights = 1/(2σ²)
+3. **Fallback:** GradNorm if any loss dominates
 
-Evaluate with the clinical framework from Phase 1. With 100+ cases, expect:
-- 10-15 test cases (statistically meaningful)
-- Significantly better absolute metrics than pilot
-- **Realistic Gamma targets** (from literature benchmarks, 2026-02-17):
-  - Global 3%/3mm: 75-88% (comparable papers report 75-85% at n=50-100 with U-Net)
-  - PTV-region 3%/3mm: 90-95%+ (where clinical accuracy matters)
-  - Note: pilot 28-31% global is in line with field at n=23 — not a red flag
-- Publishable results
+**Expected results with 100+ cases:**
+- Global 3%/3mm: 75-88% (literature benchmark)
+- PTV-region 3%/3mm: 90-95%+
+- Publishable results with multi-seed statistics
 
-### Phase 3: Iterate Based on Results
+### Phase 3: Iterate & Publish — Milestone: `Phase 3: Iterate & Publish`
 
-Depending on Phase 2 outcomes:
-- If DVH compliance is close but not there → tune loss weights
-- If architecture is the bottleneck → try attention U-Net or deeper network
-- If data diversity is still limiting → add augmentation:
-  - Standard geometric (torchio: random affine, elastic deformation, flip)
-  - **OAR contour perturbations** — small random shifts to structure boundaries to simulate inter-observer contouring variability. Clinically motivated augmentation. (Suggested by external review, 2026-02-17.)
-  - Random constraint vector perturbations (small noise on OAR limits)
+**Goal:** Result-driven iteration, failure analysis, and manuscript submission.
 
-**Publication preparation (after Phase 2 results are final):**
-- **Failure case report:** Identify bottom 10% of cases by Gamma/DVH. Categorize failure modes (anatomical complexity, contour ambiguity, constraint conflicts). Propose case-specific mitigations.
-- **Code release:** Anonymize code (remove internal paths, institution identifiers). Freeze dependencies (export exact conda environment). Prepare GitHub/Zenodo release with DOI.
-- **External validation statement:** If single-institution, explicitly document as limitation and state plan for multi-site follow-up study.
+Key items (see GitHub Issues with `phase/3-iterate` label):
+- Analyze Phase 2 results → determine next direction
+- Failure case report (bottom 10%)
+- Code release preparation (anonymize, DOI)
+- Medical Physics manuscript
 
-### Parking Lot (revisit only if above plateaus)
+### Parking Lot — GitHub Issues with `type/backburner` label
 
-- Adversarial loss (PatchGAN) for edge sharpness
-- Flow Matching / Consistency Models (generative: sample single plausible solutions instead of averaging)
-- Physics-bounded DDPM (region-aware noise schedules)
-- nnU-Net, Swin-UNETR (architecture alternatives)
-- Lightweight cross-attention or Swin blocks in bottleneck only (VRAM-conscious)
-- Ensemble of existing models (quick experiment: average predictions)
+Ideas to revisit only if the above plateaus:
+- Adversarial loss (PatchGAN)
+- Flow Matching / Consistency Models
+- Architecture alternatives (nnU-Net, Swin-UNETR)
+- Ensemble of existing models
+- OAR contour perturbation augmentation
 
 ---
 
-## DECISIONS LOG
+## DECISIONS LOG (Summary)
 
-Key decisions with rationale. Do not revisit without new evidence.
+Key decisions with rationale. Full decision records are GitHub Issues with the `type/decision` label.
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-02-17 | **Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"** | External review (Grok, 2026-02-17) independently validated project direction and suggested this framing. Pilot has 5 loss variants with clean ablation data — with 100+ cases and combined loss results, this is a strong Medical Physics submission. |
-| 2026-02-17 | **Add physician preference ranking to Phase 1 eval framework** | Blind side-by-side comparison (predicted vs ground truth) captures clinical quality beyond automated metrics. Gamma alone is misleading (already known). Strengthens publication. Suggested by external review. |
-| 2026-02-17 | **Publication target: Medical Physics, single comprehensive paper** | External review confirms Med Phys is the ideal venue for a ~100-case, 5-ablation, combined-results loss-engineering paper. PMB if emphasizing physics/novelty. JACMP for a follow-up clinical implementation study. Don't split prematurely — one strong paper first, second "clinical validation" paper (with physician rankings + deliverability) later if warranted. |
-| 2026-02-17 | **Use Uncertainty Weighting for combined loss, NOT grid search** | Kendall et al. 2018 approach: learn σ per loss, weights = 1/(2σ²). Normalize losses first (run each 10-20 epochs, divide by mean). External review consensus — stable, cheap, proven in medical MTL. GradNorm as fallback if any loss dominates. |
-| 2026-02-17 | **Pilot 28-31% global Gamma is expected at n=23, not a failure** | Literature benchmarks: pure global 3%/3mm on <60 cases = 75-85% typical; our lower number explained by (a) n=23, (b) true 3D patch training + sliding-window blending artifacts, (c) no dose thresholding (most papers ignore <10% dose voxels). With 100+ cases + combined losses: expect 75-88% global, 90-95%+ PTV-region. Strategic pivot to DVH + PTV Gamma confirmed as correct by external review. |
-| 2026-02-17 | **Add OAR contour perturbation to Phase 3 augmentation** | Small random shifts to structure boundaries simulate inter-observer contouring variability — a real clinical source of diversity. More clinically motivated than generic elastic deformation alone. Suggested by external review. |
-| 2026-02-13 | **Start clean on work machine with 100+ cases** | 23-case pilot validated methodology and loss design; trained weights are throwaway; code + docs are the deliverable; n=2 test set not statistically meaningful; 100+ cases needed for publishable results |
-| 2026-02-13 | **Shift primary metric from global Gamma to DVH compliance + PTV Gamma + gradient realism** | Global Gamma penalizes valid low-dose diversity; PTV Gamma (41.5%) is much higher than overall (31.2%); DVH compliance + physical realism are what clinicians actually evaluate |
-| 2026-02-17 | **GT D95 = 55 Gy is a pipeline artifact, NOT a clinical finding** | Clinical confirmation: all delivered prostate VMAT plans have PTV70 D95 >= 66.5 Gy (95% of 70 Gy) — plans failing this are rejected and re-optimized. The 55 Gy reading is caused by PTV mask/dose grid boundary mismatch: linear dose interpolation smooths steep falloff at PTV edge + mask may extend 1-2 voxels beyond TPS boundary into falloff zone. ~5% of PTV voxels in falloff → D95 drops to 55 Gy. Fix: erode PTV mask 1-2mm before D95 evaluation, or verify dose grid fully covers PTV. Priority fix for Phase 0. Replaces 2026-01-23 entry. |
-| 2026-01-21 | Dose prediction is semi-multi-modal | Low-dose regions are flexible; multiple valid solutions exist; pure pixel-wise metrics penalize valid diversity |
-| 2026-01-21 | VGG perceptual loss not useful | Improves MAE but NOT Gamma; adds 5x training time |
-| 2026-01-20 | DDPM not recommended | Matches baseline but doesn't beat it; structural mismatch (more steps = worse); near-zero sample variability means it's not generative; added complexity with no benefit. May revisit with physics-bounded approach if simpler methods plateau. |
+| Date | Decision | GitHub Issue |
+|------|----------|-------------|
+| 2026-02-17 | Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction" | `type/decision` |
+| 2026-02-17 | Add physician preference ranking to Phase 1 eval framework | `type/decision` |
+| 2026-02-17 | Publication target: Medical Physics, single comprehensive paper | `type/decision` |
+| 2026-02-17 | Use Uncertainty Weighting for combined loss, NOT grid search | `type/decision` |
+| 2026-02-17 | Pilot 28-31% global Gamma is expected at n=23, not a failure | See Strategic Direction |
+| 2026-02-17 | Add OAR contour perturbation to Phase 3 augmentation | `type/backburner` |
+| 2026-02-17 | GT D95 = 55 Gy is a pipeline artifact, NOT a clinical finding | `phase/0-setup` + `bug` |
+| 2026-02-13 | Start clean on work machine with 100+ cases | See Current State |
+| 2026-02-13 | Shift primary metric from global Gamma to DVH + PTV Gamma + gradient realism | `type/decision` |
+| 2026-01-21 | Dose prediction is semi-multi-modal (low-dose regions flexible) | See Strategic Direction |
+| 2026-01-21 | VGG perceptual loss not useful (improves MAE, NOT Gamma, 5x slower) | See What NOT to Pursue |
+| 2026-01-20 | DDPM not recommended (structural mismatch, no benefit) | `type/decision` |
 
 ---
 
@@ -243,9 +228,9 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 | Setting | Value |
 |---------|-------|
-| Platform | TBD (update after setup) |
-| Project | TBD |
-| Data | TBD (100+ cases) |
+| Platform | WSL2 (Ubuntu) on Windows — recommended for both Claude Code and training |
+| Project | TBD (update after setup) |
+| Data | TBD — store on Linux filesystem, NOT /mnt/c/ (100+ cases) |
 | Conda env | `vmat-diffusion` (`environment.yml`) |
 | GPU | NVIDIA RTX 3090 (24 GB) |
 
@@ -261,8 +246,7 @@ Key decisions with rationale. Do not revisit without new evidence.
 
 ### DataLoader Settings (avoid deadlocks)
 
-- Linux: `num_workers=2`, `persistent_workers=False`
-- WSL: `num_workers=2`, `persistent_workers=False`
+- Linux/WSL: `num_workers=2`, `persistent_workers=False`
 - Native Windows: `num_workers=0`
 
 ### Troubleshooting
@@ -271,4 +255,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-17 (Incorporated external review feedback: loss weight strategy, publication venue, Gamma benchmarks, physician ranking, contour perturbation, paper framing)*
+*Last updated: 2026-02-21 (Migrated task tracking to GitHub Issues + Milestones. Slimmed roadmap to overview-only — details in issues.)*

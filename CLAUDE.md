@@ -25,6 +25,7 @@ vmat-diffusion/
 │   ├── uncertainty_loss.py           # UncertaintyWeightedLoss (Kendall 2018) for Phase 2
 │   ├── calibrate_loss_normalization.py # Loss calibration for initial_log_sigma values
 │   ├── training_watchdog.sh          # Auto-recovery for hung training
+│   ├── setup_github_project.sh       # One-time GitHub labels/milestones/issues setup
 │   └── deprecated/                   # Old script versions
 ├── notebooks/                        # Jupyter experiment notebooks
 │   ├── EXPERIMENTS_INDEX.md          # MASTER experiment tracking (source of truth)
@@ -331,15 +332,55 @@ It contains the phased roadmap (Phases 0-3 + Parking Lot), strategic direction, 
 
 **For experiment history: see `notebooks/EXPERIMENTS_INDEX.md`** (the master experiment log).
 
+**For individual tasks: see [GitHub Issues](https://github.com/wrockey/vmat-diffusion/issues)** with phase labels and milestones.
+
+## GitHub Issue Workflow
+
+### Labels
+
+| Label | Purpose |
+|-------|---------|
+| `phase/0-setup` | Phase 0: Work machine setup, data collection, pipeline fixes |
+| `phase/1-eval` | Phase 1: Clinical evaluation framework |
+| `phase/2-combined` | Phase 2: Combined loss experiment |
+| `phase/3-iterate` | Phase 3: Iteration, publication prep |
+| `type/experiment` | A specific experiment to design, run, or analyze |
+| `type/decision` | Decision branch point with rationale |
+| `type/backburner` | Revisit later — not blocking current work |
+| `type/if-stuck` | Alternative approach to try if current path plateaus |
+| `type/pipeline` | Data preprocessing or evaluation pipeline work |
+| `type/publication` | Publication-related task |
+| `priority/critical` | Blocking progress |
+| `priority/high` | Important but not immediately blocking |
+| `priority/low` | Nice to have |
+| `status/blocked` | Waiting on external dependency |
+| `status/needs-data` | Cannot proceed until dataset is available |
+
+### Milestones
+
+Four milestones track phase-level progress: `Phase 0: Setup`, `Phase 1: Evaluation Framework`, `Phase 2: Combined Loss`, `Phase 3: Iterate & Publish`.
+
+### Workflow conventions
+
+- **Before starting work:** Check open issues for the current phase
+- **When starting a task:** Assign yourself to the issue
+- **When work completes:** Close the issue with a commit reference (`Closes #N`)
+- **When new tasks emerge:** Create an issue with appropriate phase + type labels
+- **Decision points:** Create a `type/decision` issue documenting alternatives considered, rationale, and status (ACCEPTED/REJECTED/PENDING)
+- **Backburner ideas:** Create a `type/backburner` issue — these are the parking lot
+- **Setup script:** `scripts/setup_github_project.sh` creates all labels, milestones, and initial issues (run once with `gh` authenticated)
+
 ## Important Notes
 
-- **No CI/CD pipeline** — experiments are tracked manually via git + notebooks
+- **No CI/CD pipeline** — experiments are tracked manually via git + notebooks + GitHub Issues
 - **No linter/formatter configured** — code follows PEP8 informally
 - **No pytest tests** — validation is through medical physics metrics
-- **Documentation hierarchy (3 files only, no exceptions):**
-  - `.claude/instructions.md` — **THE PLAN:** living project state, strategy, phased roadmap, decisions log. Updated every session.
-  - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol). Rarely updated.
+- **Documentation hierarchy:**
+  - `.claude/instructions.md` — **THE PLAN:** living project state, strategy, phased roadmap overview, decisions summary. Updated every session.
+  - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol, GitHub workflow). Rarely updated.
   - `notebooks/EXPERIMENTS_INDEX.md` — master experiment log. Updated after every experiment.
+  - **GitHub Issues** — individual tasks, bugs, backburner ideas, decision records. Updated as work progresses.
+  - **GitHub Milestones** — phase-level progress. Updated when issues are closed.
 - **No separate plan files.** If a sub-plan is needed, it must be referenced from `.claude/instructions.md`. Currently one archived sub-plan exists: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED).
 - **DataLoader:** Use `num_workers=2`, `persistent_workers=False` to avoid deadlocks (especially on WSL)
 - **OAR name mapping:** `oar_mapping.json` maps 100+ clinical naming variations to 8 canonical structures
