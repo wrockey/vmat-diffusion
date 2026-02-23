@@ -8,20 +8,84 @@
 
 | Document | Role | Update when |
 |----------|------|-------------|
-| **This file** (`.claude/instructions.md`) | **THE PLAN:** strategy, current state, phased roadmap overview, decisions summary | Every session |
+| **This file** (`.claude/instructions.md`) | **THE PLAN:** strategy, current state, phased roadmap overview, decisions summary, session log | Every session (start + end) |
 | `CLAUDE.md` | Static reference: code conventions, architecture, experiment protocol, GitHub workflow | Rarely |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log (table of all experiments) | After every experiment |
 | **GitHub Issues** | Individual tasks, bugs, backburner ideas, decision records, experiment plans | As work progresses |
 | **GitHub Milestones** | Phase-level progress tracking (Phase 0–3) | When issues are closed |
+| **GitHub Project Board** | "VMAT Diffusion Roadmap" — kanban view with Phase field. **Private** (owner-only workflow view) | When issue statuses change |
+| **GitHub Discussions** | AI review feedback channel (Grok, Claude, etc.). See [guidelines](#ai-review-workflow) | When external reviews arrive |
 
 ### Documentation Rules
 
 - **Do not create separate plan files.** All planning, strategy, roadmap, and decision content lives HERE.
 - **Individual tasks and TODOs go in GitHub Issues**, not in this file. This file contains the *overview*; issues contain the *details*.
-- **Decision records** live as GitHub Issues with the `type/decision` label. This file has a summary table; issues have the full rationale.
+- **Decision records** live as GitHub Issues with the `type/decision` label (closed when decided). This file has a summary table with issue numbers; issues have the full rationale.
 - If a sub-plan is absolutely necessary, it MUST be explicitly referenced from this file with a clear link and status.
 - Currently there is one archived sub-plan: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED 2026-01-21, DDPM abandoned).
 - **Do not create new documentation files.** If it's living state/planning, it goes here. If it's static reference, it goes in `CLAUDE.md`. If it's an experiment record, it goes in `EXPERIMENTS_INDEX.md`. If it's a task, it's a GitHub Issue.
+
+---
+
+## SESSION PROTOCOLS
+
+### Start-of-Session Checklist (DO THIS FIRST, EVERY SESSION)
+
+Before doing any work, run through this checklist silently (do not narrate unless something is wrong):
+
+1. **Read this file** — already auto-loaded, but verify the "Last updated" date at the bottom. If stale (>1 session old), flag to user.
+2. **Check GitHub Issues** — `gh issue list --state open --limit 50` — scan for new issues, status changes, or AI reviews since last session.
+3. **Check GitHub Discussions** — `gh api graphql` query for recent discussions — look for new Grok/AI reviews to triage.
+4. **Check git log** — `git log --oneline -10` — understand what changed since last session.
+5. **Check project board** — `gh project item-list 2 --owner wrockey` — verify board reflects reality.
+6. **Orient** — Based on the above, identify: (a) what phase we're in, (b) what's blocking progress, (c) what the next action is.
+
+If any of the above reveals a discrepancy (e.g., issues closed but board not updated, new AI reviews not triaged), fix it before starting work.
+
+### End-of-Session Checklist (DO THIS LAST, EVERY SESSION)
+
+Before the session ends, complete ALL of the following:
+
+1. **Update this file:**
+   - Update "CURRENT STATE" date and content to reflect work done
+   - Add a session log entry to the SESSION LOG section
+   - Update the decisions table if any decisions were made
+   - Update the parking lot if new backburner ideas emerged
+2. **Sync GitHub Issues:**
+   - Close issues that were completed (with commit references)
+   - Create issues for new tasks discovered during the session
+   - Update labels/milestones if needed
+3. **Sync project board:**
+   - Move completed items to Done
+   - Move started items to In Progress
+   - Set Phase field on any new items
+4. **Triage AI reviews:**
+   - If new Discussions arrived, summarize them in the session log
+   - Close duplicates, relabel backburner items
+5. **Commit this file:**
+   ```bash
+   git add .claude/instructions.md
+   git commit -m "docs: Update project state — <brief summary of session>"
+   ```
+
+### GitHub Sync Commands (Reference)
+
+```bash
+# Check open issues
+gh issue list --state open --limit 50
+
+# Check recent discussions
+gh api graphql -f query='{ repository(owner:"wrockey",name:"vmat-diffusion") { discussions(first:10,orderBy:{field:CREATED_AT,direction:DESC}) { nodes { number title category{name} createdAt } } } }'
+
+# Check project board state
+gh project item-list 2 --owner wrockey --format json --jq '.items[] | "\(.content.number // "draft") | \(.status) | \(.phase) | \(.title)"'
+
+# Update project board item status (need item ID and option ID)
+# Status options: Todo=f75ad846, In Progress=47fc9ee4, Done=98236657
+# Phase options: Phase 0=e73b984f, Phase 1=9dcbf090, Phase 2=eacee063, Phase 3=fddd52ce, Backburner=c4c2f48d, Decision=7f44e30c
+gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-id "PVTSSF_lAHOAkj6uc4BP7oyzg-MoCc" --single-select-option-id "<STATUS_OPTION>"
+gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-id "PVTSSF_lAHOAkj6uc4BP7oyzg-Mtf0" --single-select-option-id "<PHASE_OPTION>"
+```
 
 ---
 
@@ -35,11 +99,13 @@
    - Results committed to git
    - **An experiment without full documentation is an experiment that never happened.**
 
-2. **This file is updated at the end of every work session.** Move completed work, update the performance table, record new decisions.
+2. **This file is updated at the end of every work session** following the End-of-Session Checklist above. No exceptions.
 
 3. **Figures are publication-ready from the start.** Serif font, 12pt minimum, 300 DPI, colorblind-friendly, labeled axes with units, legends, captions with clinical interpretation. No exceptions.
 
 4. **Tasks are tracked in GitHub Issues.** Before starting work, check open issues. When work completes, close the issue with a reference to the commit. When new tasks emerge, create issues.
+
+5. **GitHub state stays in sync.** Project board, milestones, and issue statuses must reflect reality. If they don't, fix them before starting new work.
 
 ---
 
@@ -93,7 +159,16 @@ All components already implemented in prior experiments — need to combine with
 
 ---
 
-## CURRENT STATE (as of 2026-02-21)
+## CURRENT STATE (as of 2026-02-23)
+
+### Current Phase: Phase 0 (Setup) — Nothing started yet
+
+All active issues are in Todo. The critical path is Phase 0 → 1 → 2 → 3, strictly sequential.
+
+**Immediate blockers:**
+- #1 WSL dev environment setup (first step)
+- #2 Collect 100+ cases (external dependency — `status/needs-data`)
+- #4 Fix D95 pipeline artifact (CRITICAL — blocks all DVH evaluation)
 
 ### Transition: Home (Pilot) → Work (Production)
 
@@ -130,7 +205,7 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 ### Phase 2 Utilities (added 2026-02-17)
 
 - `scripts/uncertainty_loss.py` — UncertaintyWeightedLoss module (Kendall et al. 2018). Ready to import; replaces manual loss weight tuning.
-- `scripts/calibrate_loss_normalization.py` — Loss calibration script. Has stub loss functions — see GitHub issue for replacing with real implementations.
+- `scripts/calibrate_loss_normalization.py` — Loss calibration script. Has stub loss functions — see GitHub issue #11 for replacing with real implementations.
 
 ---
 
@@ -193,32 +268,83 @@ Key items (see GitHub Issues with `phase/3-iterate` label):
 ### Parking Lot — GitHub Issues with `type/backburner` label
 
 Ideas to revisit only if the above plateaus:
-- Adversarial loss (PatchGAN)
-- Flow Matching / Consistency Models
-- Architecture alternatives (nnU-Net, Swin-UNETR)
-- Ensemble of existing models
-- OAR contour perturbation augmentation
+- #19 Adversarial loss (PatchGAN)
+- #20 Flow Matching / Consistency Models
+- #21 Architecture alternatives (nnU-Net, Swin-UNETR)
+- #22 Ensemble of existing models
+- #23 OAR contour perturbation augmentation
+- #31 3D Unified Latents / latent diffusion (from Grok review 2026-02-23)
+- #32 Synthetic data generator via PortPy/OpenTPS (from Grok review 2026-02-23)
+- #33 nnU-Net-style resampling & preprocessing (from Grok review 2026-02-23)
 
 ---
 
 ## DECISIONS LOG (Summary)
 
-Key decisions with rationale. Full decision records are GitHub Issues with the `type/decision` label.
+Key decisions with rationale. Full decision records are closed GitHub Issues with the `type/decision` label. Use `gh issue list --state closed --label type/decision` to find them.
 
 | Date | Decision | GitHub Issue |
 |------|----------|-------------|
-| 2026-02-17 | Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction" | `type/decision` |
-| 2026-02-17 | Add physician preference ranking to Phase 1 eval framework | `type/decision` |
-| 2026-02-17 | Publication target: Medical Physics, single comprehensive paper | `type/decision` |
-| 2026-02-17 | Use Uncertainty Weighting for combined loss, NOT grid search | `type/decision` |
+| 2026-02-17 | Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction" | #24 (closed) |
+| 2026-02-17 | Add physician preference ranking to Phase 1 eval framework | #10 |
+| 2026-02-17 | Publication target: Medical Physics, single comprehensive paper | #28 (closed) |
+| 2026-02-17 | Use Uncertainty Weighting for combined loss, NOT grid search | #25 (closed) |
 | 2026-02-17 | Pilot 28-31% global Gamma is expected at n=23, not a failure | See Strategic Direction |
-| 2026-02-17 | Add OAR contour perturbation to Phase 3 augmentation | `type/backburner` |
-| 2026-02-17 | GT D95 = 55 Gy is a pipeline artifact, NOT a clinical finding | `phase/0-setup` + `bug` |
+| 2026-02-17 | Add OAR contour perturbation to Phase 3 augmentation | #23 |
+| 2026-02-17 | GT D95 = 55 Gy is a pipeline artifact, NOT a clinical finding | #4 |
 | 2026-02-13 | Start clean on work machine with 100+ cases | See Current State |
-| 2026-02-13 | Shift primary metric from global Gamma to DVH + PTV Gamma + gradient realism | `type/decision` |
+| 2026-02-13 | Shift primary metric from global Gamma to DVH + PTV Gamma + gradient realism | #26 (closed) |
 | 2026-01-21 | Dose prediction is semi-multi-modal (low-dose regions flexible) | See Strategic Direction |
 | 2026-01-21 | VGG perceptual loss not useful (improves MAE, NOT Gamma, 5x slower) | See What NOT to Pursue |
-| 2026-01-20 | DDPM not recommended (structural mismatch, no benefit) | `type/decision` |
+| 2026-01-20 | DDPM not recommended (structural mismatch, no benefit) | #27 (closed) |
+
+---
+
+## AI REVIEW WORKFLOW
+
+External AI assistants (Grok, Claude, etc.) review the public repo and provide feedback via GitHub Discussions and Issues.
+
+- **Discussions** (https://github.com/wrockey/vmat-diffusion/discussions) — open-ended feedback, architecture reviews, experiment ideas
+- **Issues with `source/ai-review` label** — actionable suggestions promoted from discussions
+- **Guidelines post:** Discussion #29 — format and category guide for AI reviewers
+- **Project board is private** — AI reviewers see issues/discussions/code but not the kanban board
+
+**Triage workflow when new AI reviews arrive:**
+1. Read the discussion/issues
+2. Close duplicates of existing issues
+3. Relabel speculative suggestions as `type/backburner`
+4. Promote genuinely actionable items to Issues with proper phase/type labels and add to project board
+5. Log the review in the Session Log below
+
+---
+
+## SESSION LOG
+
+Reverse chronological. One entry per session. Captures what was done so the next session has context.
+
+### 2026-02-23 — Project board setup, AI review workflow, GitHub infrastructure
+
+**Work done:**
+- Reviewed full project status (all phases, experiments, pilot findings)
+- Set up GitHub Project Board ("VMAT Diffusion Roadmap"):
+  - Added "Phase" custom field with 6 options (Phase 0-3, Backburner, Decision)
+  - Tagged all 28 issues with correct Phase and Status
+  - Decision issues (#24-28) closed and moved to Done
+  - Board has Todo/In Progress/Done columns; user to create filtered views via web UI
+- Enabled GitHub Discussions for AI review feedback
+  - Created guidelines post (Discussion #29)
+  - Created `source/ai-review` label
+- Triaged Grok's first review (Discussion #34):
+  - Closed #30 as duplicate of #4 (D95 bug)
+  - Relabeled #31, #32, #33 as `type/backburner`, set Phase to Backburner on board
+  - Added #31-33 to parking lot in this file
+- Updated this file: added Session Protocols, AI Review Workflow, Session Log, fixed decisions table with issue numbers
+- **No code changes.** Infrastructure/workflow session only.
+
+**Board views still needed (manual, web UI):**
+- "By Phase" table view grouped by Phase field
+- "Active Work" board view filtered to Phase 0-3
+- "Backburner" table view filtered to Backburner phase
 
 ---
 
@@ -255,4 +381,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-21 (Migrated task tracking to GitHub Issues + Milestones. Slimmed roadmap to overview-only — details in issues.)*
+*Last updated: 2026-02-23 (Added session protocols, AI review workflow, session log. Fixed decisions table with issue numbers. Triaged Grok review.)*
