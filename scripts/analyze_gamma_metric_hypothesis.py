@@ -88,23 +88,44 @@ CLINICAL_CONSTRAINTS = {
 }
 
 RX_DOSE_GY = 70.0
-DEFAULT_SPACING_MM = (2.5, 2.5, 2.5)
+DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)
 
 
-def load_prediction_and_target(pred_path: Path, data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load prediction, target, and masks."""
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+    """
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
+
+
+def load_prediction_and_target(pred_path: Path, data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, tuple]:
+    """Load prediction, target, masks, and spacing."""
     pred_data = np.load(pred_path)
     pred_dose_raw = pred_data['dose']  # Normalized 0-1 scale
     pred_dose = pred_dose_raw * RX_DOSE_GY  # Convert to Gy
 
     case_id = pred_path.stem.replace('_pred', '')
     target_path = data_dir / f'{case_id}.npz'
-    target_data = np.load(target_path)
+    target_data = np.load(target_path, allow_pickle=True)
 
     target_dose = target_data['dose'] * RX_DOSE_GY  # Convert to Gy (normalized 0-1)
     masks_sdf = target_data['masks_sdf']
 
-    return pred_dose, target_dose, masks_sdf
+    metadata = target_data['metadata'].item() if 'metadata' in target_data.files else {}
+    spacing = get_spacing_from_metadata(metadata)
+
+    return pred_dose, target_dose, masks_sdf, spacing
 
 
 def extract_structure_masks(masks_sdf: np.ndarray) -> Dict[str, np.ndarray]:
@@ -276,12 +297,13 @@ def analyze_single_case(
     case_id = pred_path.stem.replace('_pred', '')
     print(f"\nAnalyzing: {case_id}")
 
-    pred_dose, target_dose, masks_sdf = load_prediction_and_target(pred_path, data_dir)
+    pred_dose, target_dose, masks_sdf, spacing = load_prediction_and_target(pred_path, data_dir)
     masks = extract_structure_masks(masks_sdf)
 
     results = {
         'case_id': case_id,
         'timestamp': datetime.now().isoformat(),
+        'spacing_mm': spacing,
         'dvh_metrics': {},
         'constraint_results': [],
         'region_gamma': {},
@@ -310,28 +332,28 @@ def analyze_single_case(
     # PTV-only Gamma (combined PTV70 + PTV56)
     ptv_mask = masks['PTV70'] | masks['PTV56']
     results['region_gamma']['PTV_combined'] = compute_region_gamma(
-        pred_dose, target_dose, ptv_mask, subsample=2
+        pred_dose, target_dose, ptv_mask, spacing_mm=spacing, subsample=2
     )
     print(f"    PTV Gamma: {results['region_gamma']['PTV_combined'].get('gamma_pass_rate', 'N/A'):.1f}%")
 
     # OAR Gamma (Rectum + Bladder)
     oar_mask = masks['Rectum'] | masks['Bladder']
     results['region_gamma']['OAR_combined'] = compute_region_gamma(
-        pred_dose, target_dose, oar_mask, subsample=2
+        pred_dose, target_dose, oar_mask, spacing_mm=spacing, subsample=2
     )
     print(f"    OAR Gamma: {results['region_gamma']['OAR_combined'].get('gamma_pass_rate', 'N/A'):.1f}%")
 
     # High-dose region (>50% Rx)
     high_dose_mask = target_dose > (0.5 * RX_DOSE_GY)
     results['region_gamma']['high_dose'] = compute_region_gamma(
-        pred_dose, target_dose, high_dose_mask, subsample=2
+        pred_dose, target_dose, high_dose_mask, spacing_mm=spacing, subsample=2
     )
     print(f"    High-dose Gamma: {results['region_gamma']['high_dose'].get('gamma_pass_rate', 'N/A'):.1f}%")
 
     # Low-dose region (10-50% Rx) - the "no man's land"
     low_dose_mask = (target_dose > (0.1 * RX_DOSE_GY)) & (target_dose <= (0.5 * RX_DOSE_GY))
     results['region_gamma']['low_dose'] = compute_region_gamma(
-        pred_dose, target_dose, low_dose_mask, subsample=2
+        pred_dose, target_dose, low_dose_mask, spacing_mm=spacing, subsample=2
     )
     print(f"    Low-dose Gamma: {results['region_gamma']['low_dose'].get('gamma_pass_rate', 'N/A'):.1f}%")
 

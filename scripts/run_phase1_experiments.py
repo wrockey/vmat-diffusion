@@ -34,7 +34,7 @@ import torch.nn.functional as F
 # Add scripts to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset, DEFAULT_SPACING_MM
+from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset, DEFAULT_SPACING_MM, get_spacing_from_metadata
 
 # Optional pymedphys for gamma
 try:
@@ -155,6 +155,10 @@ def evaluate_prediction(
     data = np.load(npz_path, allow_pickle=True)
     target = data['dose']
 
+    # Read spacing from metadata
+    metadata = data['metadata'].item() if 'metadata' in data.files else {}
+    spacing = get_spacing_from_metadata(metadata)
+
     # Convert to Gy
     pred_gy = pred * rx_dose_gy
     target_gy = target * rx_dose_gy
@@ -168,10 +172,11 @@ def evaluate_prediction(
         'target_mean_gy': float(target_gy.mean()),
         'pred_max_gy': float(pred_gy.max()),
         'target_max_gy': float(target_gy.max()),
+        'spacing_mm': spacing,
     }
 
     # Gamma pass rate
-    gamma_result = compute_gamma(pred_gy, target_gy)
+    gamma_result = compute_gamma(pred_gy, target_gy, spacing_mm=spacing)
     metrics.update({f'gamma_{k}': v for k, v in gamma_result.items()})
 
     return metrics

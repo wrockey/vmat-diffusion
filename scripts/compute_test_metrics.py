@@ -26,7 +26,30 @@ except ImportError:
     HAS_PYMEDPHYS = False
     print("Warning: pymedphys not installed, gamma will be skipped")
 
-DEFAULT_SPACING_MM = (2.5, 2.5, 2.5)
+DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)
+
+
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+
+    Fallback chain:
+        1. voxel_spacing_mm (v2.3+ native spacing)
+        2. target_spacing_mm (v2.2 resampled spacing)
+        3. DEFAULT_SPACING_MM
+    """
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
 
 
 def compute_dose_metrics(pred: np.ndarray, target: np.ndarray, rx_dose_gy: float = 70.0) -> Dict:
@@ -117,12 +140,15 @@ def compute_gamma(
 
 
 def compute_dvh_metrics(pred: np.ndarray, target: np.ndarray, masks: np.ndarray,
-                        structure_names: Dict[int, str], rx_dose_gy: float = 70.0) -> Dict:
+                        structure_names: Dict[int, str], rx_dose_gy: float = 70.0,
+                        spacing_mm: tuple = None) -> Dict:
     """Compute DVH metrics for each structure."""
+    if spacing_mm is None:
+        spacing_mm = DEFAULT_SPACING_MM
     pred_gy = pred * rx_dose_gy
     target_gy = target * rx_dose_gy
 
-    voxel_vol_cc = (2.5 * 2.5 * 2.5) / 1000  # mm^3 to cc
+    voxel_vol_cc = float(np.prod(spacing_mm)) / 1000.0  # mm^3 to cc
 
     results = {}
 
@@ -189,15 +215,20 @@ def main():
 
         # Load data
         pred_data = np.load(pred_path)
-        gt_data = np.load(data_path)
+        gt_data = np.load(data_path, allow_pickle=True)
 
         pred = pred_data['dose']
         target = gt_data['dose']
         masks = gt_data['masks']
 
+        # Read spacing from metadata
+        metadata = gt_data['metadata'].item() if 'metadata' in gt_data.files else {}
+        spacing = get_spacing_from_metadata(metadata)
+
         results = {
             'case_id': case_id,
             'timestamp': datetime.now().isoformat(),
+            'spacing_mm': spacing,
         }
 
         # Dose metrics
@@ -208,11 +239,11 @@ def main():
         print("  Computing gamma...")
         pred_gy = pred * args.rx_dose_gy
         target_gy = target * args.rx_dose_gy
-        results['gamma'] = compute_gamma(pred_gy, target_gy, subsample=args.gamma_subsample)
+        results['gamma'] = compute_gamma(pred_gy, target_gy, spacing_mm=spacing, subsample=args.gamma_subsample)
 
         # DVH metrics
         print("  Computing DVH metrics...")
-        results['dvh_metrics'] = compute_dvh_metrics(pred, target, masks, structure_names, args.rx_dose_gy)
+        results['dvh_metrics'] = compute_dvh_metrics(pred, target, masks, structure_names, args.rx_dose_gy, spacing_mm=spacing)
 
         all_results.append(results)
 

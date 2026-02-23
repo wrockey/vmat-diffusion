@@ -41,6 +41,30 @@ from tqdm import tqdm
 # Import model from training script
 from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset, DEFAULT_SPACING_MM
 
+
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+
+    Fallback chain:
+        1. voxel_spacing_mm (v2.3+ native spacing)
+        2. target_spacing_mm (v2.2 resampled spacing)
+        3. DEFAULT_SPACING_MM
+    """
+    import numpy as np
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
+
 # Optional: pymedphys for gamma
 try:
     from pymedphys import gamma as pymedphys_gamma
@@ -345,20 +369,24 @@ def compute_dvh_metrics(
     masks: np.ndarray,
     structure_names: Dict[int, str],
     rx_dose_gy: float = 70.0,
+    spacing_mm: Tuple[float, ...] = None,
 ) -> Dict[str, Dict[str, float]]:
     """
     Compute DVH-based metrics for each structure.
-    
+
     Args:
         pred: Predicted dose (normalized)
         target: Ground truth dose (normalized)
         masks: Binary masks (C, H, W, D)
         structure_names: Channel to structure name mapping
         rx_dose_gy: Prescription dose for denormalization
-    
+        spacing_mm: Voxel spacing in mm (default: DEFAULT_SPACING_MM)
+
     Returns:
         Dict of metrics per structure
     """
+    if spacing_mm is None:
+        spacing_mm = DEFAULT_SPACING_MM
     pred_gy = pred * rx_dose_gy
     target_gy = target * rx_dose_gy
     
@@ -379,7 +407,7 @@ def compute_dvh_metrics(
         # Basic stats
         metrics = {
             'exists': True,
-            'volume_cc': float(mask.sum() * np.prod(DEFAULT_SPACING_MM) / 1000),
+            'volume_cc': float(mask.sum() * np.prod(spacing_mm) / 1000),
             'mae_gy': float(np.mean(np.abs(pred_struct - target_struct))),
             'pred_mean_gy': float(pred_struct.mean()),
             'target_mean_gy': float(target_struct.mean()),
@@ -488,22 +516,27 @@ def evaluate_single_case(
     data = np.load(npz_path, allow_pickle=True)
     target = data['dose']
     masks = data['masks']
-    
+
+    # Read spacing from metadata
+    metadata = data['metadata'].item() if 'metadata' in data.files else {}
+    spacing = get_spacing_from_metadata(metadata)
+
     # Structure names
     structure_names = {
         0: 'PTV70', 1: 'PTV56', 2: 'Prostate', 3: 'Rectum',
         4: 'Bladder', 5: 'Femur_L', 6: 'Femur_R', 7: 'Bowel'
     }
-    
+
     results = {
         'case_id': Path(npz_path).stem,
         'timestamp': datetime.now().isoformat(),
+        'spacing_mm': spacing,
     }
-    
+
     # Dose metrics
     print("  Computing dose metrics...")
     results['dose_metrics'] = compute_dose_metrics(pred, target, rx_dose_gy)
-    
+
     # Gamma
     if compute_gamma_metric and HAS_PYMEDPHYS:
         print("  Computing gamma (this may take a moment)...")
@@ -511,13 +544,14 @@ def evaluate_single_case(
         target_gy = target * rx_dose_gy
         results['gamma'] = compute_gamma(
             pred_gy, target_gy,
+            spacing_mm=spacing,
             subsample=gamma_subsample,
         )
-    
+
     # DVH metrics
     print("  Computing DVH metrics...")
     results['dvh_metrics'] = compute_dvh_metrics(
-        pred, target, masks, structure_names, rx_dose_gy
+        pred, target, masks, structure_names, rx_dose_gy, spacing_mm=spacing
     )
     
     # Clinical constraint check

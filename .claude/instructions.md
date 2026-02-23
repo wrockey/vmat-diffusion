@@ -176,7 +176,7 @@ All components already implemented in prior experiments — need to combine with
 **Immediate blockers:**
 - #1 WSL dev environment setup (first step)
 - #2 Collect and anonymize remaining cases (in progress — ~70 of ~250-300 collected)
-- #4 Fix D95 pipeline artifact (CRITICAL — blocks all DVH evaluation)
+- #4 Fix D95 pipeline artifact (CRITICAL — **code complete v2.3.0**, needs reprocessing + verification)
 
 ### Transition: Home (Pilot) → Work (Production)
 
@@ -283,7 +283,9 @@ Ideas to revisit only if the above plateaus:
 - #23 OAR contour perturbation augmentation
 - #31 3D Unified Latents / latent diffusion (from Grok review 2026-02-23)
 - #32 Synthetic data generator via PortPy/OpenTPS (from Grok review 2026-02-23)
-- #33 nnU-Net-style resampling & preprocessing (from Grok review 2026-02-23)
+- #33 nnU-Net-style resampling & preprocessing (from Grok review 2026-02-23) — **Deferred by expert panel**
+- #35 Anisotropic patch sizes 128×128×64 (from expert review 2026-02-23)
+- #36 HU windowing experiment [-200, 1500] (from expert review 2026-02-23)
 
 ---
 
@@ -329,6 +331,36 @@ External AI assistants (Grok, Claude, etc.) review the public repo and provide f
 ## SESSION LOG
 
 Reverse chronological. One entry per session. Captures what was done so the next session has context.
+
+### 2026-02-23 — Preprocessing pipeline redesign: crop instead of resample (D95 fix)
+
+**Work done:**
+- Implemented v2.3.0 preprocessing pipeline to fix CRITICAL D95 artifact (#4)
+  - Root cause: v2.2 resampled CT/dose/masks to fixed 512×512×256 grid. Dose used linear interpolation (smoothed boundary voxels to ~55 Gy), masks used nearest-neighbor (shifted boundary 1-2 voxels). Mismatch corrupted all DVH evaluation.
+  - Fix: keep CT and masks at native resolution, resample only dose to CT grid using B-spline interpolation, then crop to fixed physical extent centered on prostate
+  - In-plane: 300 voxels centered on centroid (~30cm, eliminates ~65% air/table)
+  - Axial: dynamic bounding box of all structures + 30mm margin, min 128 voxels
+  - Typical output: ~300×300×160 (78% size reduction)
+- Added `get_spacing_from_metadata()` utility with backwards-compatible fallback chain (voxel_spacing_mm → target_spacing_mm → DEFAULT_SPACING_MM)
+- Added `compute_crop_box()` function for anatomy-centered cropping
+- Updated all 7 downstream scripts to read spacing from NPZ metadata:
+  - train_baseline_unet.py, train_dose_ddpm_v2.py, inference_dose_ddpm.py, inference_baseline_unet.py, compute_test_metrics.py, analyze_gamma_metric_hypothesis.py, run_phase1_experiments.py
+- Fixed compute_test_metrics.py wrong DEFAULT_SPACING_MM (was 2.5,2.5,2.5 → now 1.0,1.0,2.0)
+- Fixed StructureWeightedLoss SDF threshold bug (was dividing by voxel_size_mm=2.5, should divide by sdf_clip_mm=50.0)
+- Added DVH validation in preprocessing: warns if PTV70 D95 < 64 Gy
+- Added dose coverage check: warns if >5% PTV voxels have zero dose
+- Updated CLAUDE.md: NPZ format v2.3.0, preprocessing commands, data pipeline description
+- Expert review recommendations adopted: B-spline interpolation, 30mm Z margin, DVH validation, store original dose grid spacing
+
+**Deferred (tracked as backburner):**
+- nnU-Net-style common spacing resampling (#33) — revisit if training shows spacing sensitivity
+- Anisotropic patches (128×128×64) — requires architecture changes
+- HU windowing [-200, 1500] — independent hyperparameter experiment
+
+**Still needed (not code changes):**
+- Reprocess all cases with v2.3.0 pipeline
+- Verify on pilot cases: PTV70 D95 ≥ 66.5 Gy
+- GitHub issue updates (#4 comment, #33 comment, new backburner issues)
 
 ### 2026-02-23 — Project board setup, AI review workflow, GitHub infrastructure
 
@@ -394,4 +426,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-23 (Added session protocols, AI review workflow, session log. Fixed decisions table with issue numbers. Triaged Grok review.)*
+*Last updated: 2026-02-23 (Preprocessing pipeline v2.3.0 — crop instead of resample, fixes D95 artifact. Updated all downstream scripts for metadata-based spacing.)*

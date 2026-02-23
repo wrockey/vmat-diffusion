@@ -92,7 +92,30 @@ STRUCTURE_CHANNELS = {
 
 DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)  # From preprocessing
 
-SCRIPT_VERSION = "2.2.0"
+SCRIPT_VERSION = "2.2.1"
+
+
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+
+    Fallback chain:
+        1. voxel_spacing_mm (v2.3+ native spacing)
+        2. target_spacing_mm (v2.2 resampled spacing)
+        3. DEFAULT_SPACING_MM
+    """
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
 
 
 # =============================================================================
@@ -388,8 +411,9 @@ class VMATDosePatchDataset(Dataset):
         masks_sdf = data['masks_sdf'].astype(np.float32)  # (8, H, W, D)
         constraints = data['constraints'].astype(np.float32)  # (13,)
         
-        # Extract metadata for potential use
+        # Extract metadata and spacing
         metadata = data['metadata'].item() if 'metadata' in data.files else {}
+        spacing = get_spacing_from_metadata(metadata)
         
         # Get volume shape
         H, W, D = ct.shape
@@ -426,6 +450,7 @@ class VMATDosePatchDataset(Dataset):
             'condition': condition,
             'dose': dose_tensor,
             'constraints': constraint_tensor,
+            'spacing': torch.tensor(spacing, dtype=torch.float32),
             'file_idx': file_idx,
             'center': torch.tensor(center),
         }
@@ -915,10 +940,12 @@ class DoseDDPM(pl.LightningModule):
                 self.log('val/mae_gy', mae_gy, prog_bar=True)
                 
                 # Store for epoch-end metrics
+                spacing = batch.get('spacing', None)
                 self.validation_step_outputs.append({
                     'pred': pred_dose.cpu(),
                     'target': dose.cpu(),
                     'masks': batch.get('masks_binary', None),
+                    'spacing': spacing[0].cpu().numpy() if spacing is not None else None,
                 })
     
     def on_validation_epoch_end(self) -> None:
@@ -931,10 +958,11 @@ class DoseDDPM(pl.LightningModule):
         output = self.validation_step_outputs[0]
         pred = output['pred'][0, 0].numpy() * self.hparams.rx_dose_gy
         target = output['target'][0, 0].numpy() * self.hparams.rx_dose_gy
-        
+        spacing = tuple(output['spacing']) if output.get('spacing') is not None else None
+
         # Compute gamma (subsampled for speed)
         try:
-            gamma_result = self._compute_gamma_subsampled(pred, target, subsample=4)
+            gamma_result = self._compute_gamma_subsampled(pred, target, spacing_mm=spacing, subsample=4)
             self.log('val/gamma_3mm3pct', gamma_result, prog_bar=True)
         except Exception as e:
             print(f"Gamma computation failed: {e}")
@@ -942,19 +970,22 @@ class DoseDDPM(pl.LightningModule):
         self.validation_step_outputs.clear()
     
     def _compute_gamma_subsampled(
-        self, 
-        pred: np.ndarray, 
-        target: np.ndarray, 
+        self,
+        pred: np.ndarray,
+        target: np.ndarray,
+        spacing_mm: tuple = None,
         subsample: int = 4,
         dose_threshold_pct: float = 10.0,
     ) -> float:
         """Compute gamma pass rate on subsampled volume."""
+        if spacing_mm is None:
+            spacing_mm = DEFAULT_SPACING_MM
         # Subsample
         pred_sub = pred[::subsample, ::subsample, ::subsample]
         target_sub = target[::subsample, ::subsample, ::subsample]
-        
+
         # Spacing after subsampling
-        spacing_sub = tuple(s * subsample for s in DEFAULT_SPACING_MM)
+        spacing_sub = tuple(s * subsample for s in spacing_mm)
         
         # Create coordinate axes
         axes = tuple(

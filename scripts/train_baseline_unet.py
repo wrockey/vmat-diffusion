@@ -70,7 +70,36 @@ STRUCTURE_CHANNELS = {
 
 DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
+
+
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+
+    Fallback chain:
+        1. voxel_spacing_mm (v2.3+ native spacing)
+        2. target_spacing_mm (v2.2 resampled spacing)
+        3. DEFAULT_SPACING_MM (1.0, 1.0, 2.0)
+
+    Args:
+        metadata: dict from npz['metadata'].item()
+
+    Returns:
+        tuple: (y_spacing, x_spacing, z_spacing) in mm
+    """
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
 
 
 # =============================================================================
@@ -107,30 +136,35 @@ class VMATDosePatchDataset(Dataset):
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         file_idx = idx // self.patches_per_volume
-        
+
         # Load data
         data = np.load(self.files[file_idx], allow_pickle=True)
-        
+
         ct = data['ct'].astype(np.float32)
         dose = data['dose'].astype(np.float32)
         masks_sdf = data['masks_sdf'].astype(np.float32)
         constraints = data['constraints'].astype(np.float32)
-        
+
+        # Read spacing from metadata (v2.3+) with fallback
+        metadata = data['metadata'].item() if 'metadata' in data.files else {}
+        spacing = get_spacing_from_metadata(metadata)
+
         # Extract patch
         center = self._sample_patch_center(dose)
         ct_patch, dose_patch, sdf_patch = self._extract_patch(ct, dose, masks_sdf, center)
-        
+
         # Augment
         if self.augment:
             ct_patch, dose_patch, sdf_patch = self._augment(ct_patch, dose_patch, sdf_patch)
-        
+
         # Build condition: CT + SDFs
         condition = np.concatenate([ct_patch[np.newaxis], sdf_patch], axis=0)
-        
+
         return {
             'condition': torch.from_numpy(condition),
             'dose': torch.from_numpy(dose_patch[np.newaxis]),
             'constraints': torch.from_numpy(constraints),
+            'spacing': torch.tensor(spacing, dtype=torch.float32),
         }
     
     def _sample_patch_center(self, dose: np.ndarray) -> Tuple[int, int, int]:
@@ -803,7 +837,7 @@ class StructureWeightedLoss(nn.Module):
         oar_boundary_weight: float = 1.5,
         background_weight: float = 0.5,
         boundary_width_mm: float = 5.0,
-        voxel_size_mm: float = 2.5,
+        sdf_clip_mm: float = 50.0,
     ):
         """
         Args:
@@ -811,15 +845,16 @@ class StructureWeightedLoss(nn.Module):
             oar_boundary_weight: Weight for OAR boundary regions (default: 1.5)
             background_weight: Weight for "no-man's land" (default: 0.5)
             boundary_width_mm: Width of OAR boundary region in mm (default: 5.0)
-            voxel_size_mm: Voxel size for SDF interpretation (default: 2.5)
+            sdf_clip_mm: SDF clip distance used in preprocessing (default: 50.0)
         """
         super().__init__()
         self.ptv_weight = ptv_weight
         self.oar_boundary_weight = oar_boundary_weight
         self.background_weight = background_weight
-        # Convert boundary width from mm to normalized SDF units
-        # SDF values are typically in voxel units
-        self.boundary_threshold = boundary_width_mm / voxel_size_mm
+        # Convert boundary width from mm to normalized SDF units [-1, 1]
+        # SDF is clipped at ±clip_mm then normalized by clip_mm, so
+        # boundary_width_mm maps to boundary_width_mm / clip_mm
+        self.boundary_threshold = boundary_width_mm / sdf_clip_mm
 
     def extract_masks(self, condition: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
@@ -1356,9 +1391,11 @@ class BaselineDosePredictor(pl.LightningModule):
 
         # Store for gamma computation
         if batch_idx == 0:
+            spacing = batch.get('spacing', None)
             self.validation_step_outputs.append({
                 'pred': pred_dose.cpu(),
                 'target': dose.cpu(),
+                'spacing': spacing[0].cpu().numpy() if spacing is not None else None,
             })
     
     def on_validation_epoch_end(self) -> None:
@@ -1370,9 +1407,10 @@ class BaselineDosePredictor(pl.LightningModule):
         output = self.validation_step_outputs[0]
         pred = output['pred'][0, 0].numpy() * self.hparams.rx_dose_gy
         target = output['target'][0, 0].numpy() * self.hparams.rx_dose_gy
-        
+        spacing = tuple(output['spacing']) if output.get('spacing') is not None else None
+
         try:
-            gamma_result = self._compute_gamma_subsampled(pred, target, subsample=4)
+            gamma_result = self._compute_gamma_subsampled(pred, target, spacing_mm=spacing, subsample=4)
             self.log('val/gamma_3mm3pct', gamma_result, prog_bar=True)
         except Exception as e:
             print(f"Gamma computation failed: {e}")
@@ -1383,19 +1421,23 @@ class BaselineDosePredictor(pl.LightningModule):
         self,
         pred: np.ndarray,
         target: np.ndarray,
+        spacing_mm: tuple = None,
         subsample: int = 4,
         dose_threshold_pct: float = 10.0,
     ) -> float:
         """Compute gamma pass rate on subsampled volume."""
+        if spacing_mm is None:
+            spacing_mm = DEFAULT_SPACING_MM
+
         pred_sub = pred[::subsample, ::subsample, ::subsample]
         target_sub = target[::subsample, ::subsample, ::subsample]
-        
-        spacing_sub = tuple(s * subsample for s in DEFAULT_SPACING_MM)
-        
+
+        spacing_sub = tuple(s * subsample for s in spacing_mm)
+
         axes = tuple(
             np.arange(s) * sp for s, sp in zip(pred_sub.shape, spacing_sub)
         )
-        
+
         gamma_map = pymedphys_gamma(
             axes_reference=axes,
             dose_reference=target_sub,
@@ -1405,11 +1447,11 @@ class BaselineDosePredictor(pl.LightningModule):
             distance_mm_threshold=3.0,
             lower_percent_dose_cutoff=dose_threshold_pct,
         )
-        
+
         valid = np.isfinite(gamma_map)
         if not valid.any():
             return 0.0
-        
+
         return float(np.mean(gamma_map[valid] <= 1.0) * 100)
     
     def predict_full_volume(

@@ -22,7 +22,7 @@ import torch
 from tqdm import tqdm
 
 # Import baseline model
-from train_baseline_unet import BaselineDosePredictor, DEFAULT_SPACING_MM
+from train_baseline_unet import BaselineDosePredictor, DEFAULT_SPACING_MM, get_spacing_from_metadata
 
 # Import evaluation functions from diffusion inference script
 from inference_dose_ddpm import (
@@ -101,37 +101,42 @@ def evaluate_single_case(
     data = np.load(npz_path, allow_pickle=True)
     target = data['dose']
     masks = data['masks']
-    
+
+    # Read spacing from metadata
+    metadata = data['metadata'].item() if 'metadata' in data.files else {}
+    spacing = get_spacing_from_metadata(metadata)
+
     structure_names = {
         0: 'PTV70', 1: 'PTV56', 2: 'Prostate', 3: 'Rectum',
         4: 'Bladder', 5: 'Femur_L', 6: 'Femur_R', 7: 'Bowel'
     }
-    
+
     results = {
         'case_id': Path(npz_path).stem,
         'model_type': 'baseline_unet',
         'timestamp': datetime.now().isoformat(),
+        'spacing_mm': spacing,
     }
-    
+
     # Dose metrics
     print("  Computing dose metrics...")
     results['dose_metrics'] = compute_dose_metrics(pred, target, rx_dose_gy)
-    
+
     # Gamma
     if compute_gamma_metric and HAS_PYMEDPHYS:
         print("  Computing gamma...")
         pred_gy = pred * rx_dose_gy
         target_gy = target * rx_dose_gy
-        results['gamma'] = compute_gamma(pred_gy, target_gy, subsample=gamma_subsample)
-    
+        results['gamma'] = compute_gamma(pred_gy, target_gy, spacing_mm=spacing, subsample=gamma_subsample)
+
     # DVH metrics
     print("  Computing DVH metrics...")
-    results['dvh_metrics'] = compute_dvh_metrics(pred, target, masks, structure_names, rx_dose_gy)
-    
+    results['dvh_metrics'] = compute_dvh_metrics(pred, target, masks, structure_names, rx_dose_gy, spacing_mm=spacing)
+
     # Clinical constraints
     print("  Checking clinical constraints...")
     results['clinical_constraints'] = check_clinical_constraints(results['dvh_metrics'])
-    
+
     return results
 
 

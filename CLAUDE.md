@@ -90,8 +90,9 @@ pip install -r requirements.txt
 ## Key Commands
 
 ```bash
-# Preprocessing: DICOM-RT → NPZ
+# Preprocessing: DICOM-RT → NPZ (v2.3 crop pipeline)
 python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
+# Options: --inplane_size 300 --z_margin_mm 30 (defaults)
 
 # Train baseline U-Net (primary model)
 python scripts/train_baseline_unet.py \
@@ -122,22 +123,25 @@ python scripts/train_dose_ddpm_v2.py --data_dir /path/to/processed_npz --epochs 
 - **Input:** CT (1 channel) + Signed Distance Fields for 8 structures (8 channels) = 9 input channels
 - **Output:** 3D dose distribution (1 channel)
 - **Constraints:** 13-dimensional vector (prescription doses + OAR limits)
+- **Preprocessing (v2.3):** CT and masks kept at native resolution; dose resampled to CT grid (B-spline); all volumes cropped to ~300×300×Z centered on prostate. Variable output shape per patient.
 - **Patch size:** 128³ voxels during training, sliding window for full-volume inference
 - **Data split:** 80/10/10 (train/val/test)
 
 ### 8 Anatomical Structures (SDF channels)
 0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder, 5: Femur_L, 6: Femur_R, 7: Bowel
 
-### NPZ Data Format (v2.2.0)
+### NPZ Data Format (v2.3.0)
 ```python
 {
-    'ct': (D, H, W) float32,              # Normalized [0,1]
-    'dose': (D, H, W) float32,            # Normalized to Rx
-    'masks': (8, D, H, W) uint8,          # Binary masks
-    'masks_sdf': (8, D, H, W) float32,    # Signed distance fields
+    'ct': (Y, X, Z) float32,              # Normalized [0,1], native resolution cropped
+    'dose': (Y, X, Z) float32,            # Normalized to Rx, on CT grid cropped
+    'masks': (8, Y, X, Z) uint8,          # Binary masks, native grid cropped
+    'masks_sdf': (8, Y, X, Z) float32,    # Signed distance fields [-1,1]
     'constraints': (13,) float32,          # [Rx, OAR limits...]
-    'metadata': dict,                      # Case info
+    'metadata': dict,                      # Case info, spacing, crop, validation
 }
+# Metadata includes: voxel_spacing_mm, volume_shape, crop_box, dose_grid_spacing_mm
+# Typical output: ~300×300×160 (vs old 512×512×256)
 ```
 
 ### Model: BaselineUNet3D (primary)

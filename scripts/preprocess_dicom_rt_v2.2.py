@@ -1,37 +1,43 @@
 """
 Preprocess DICOM-RT VMAT plans to .npz for diffusion model training.
 
-Functionality: Resamples/aligns CT, masks, dose to fixed grid (512x512x256 @ 1x1x2mm),
-centers on prostate/PTV70, normalizes, computes SDFs, extracts FULL beam geometry
-including MLC sequences, and saves with constraints and metadata.
+Functionality: Keeps CT and masks at native resolution, resamples only dose
+(coarse grid) to CT grid using B-spline interpolation, then crops to a fixed
+physical extent centered on the prostate. Computes SDFs, extracts beam geometry,
+and saves with constraints and metadata.
 
-Version: 2.2.0 - Phase 2-ready with full MLC/dose rate extraction
+Version: 2.3.0 - Crop-based pipeline (fixes D95 artifact)
 
-Changes from v2.1.1:
-- Full MLC leaf position extraction at every control point
-- Dose rate extraction per control point
-- Jaw positions (X1, X2, Y1, Y2) per control point
-- Cumulative meterset weight (MU) per control point
-- Gantry angles per control point
-- Beam energy extraction
-- Treatment machine name
-- Leaf boundary information
-- MLC arrays stored as separate npz keys for efficient access
-- Uses np.savez_compressed for smaller file sizes
+Changes from v2.2.0:
+- CRITICAL FIX: Replaced fixed-grid resampling (512x512x256 @ 1x1x2mm) with
+  crop-based pipeline. Masks are NEVER resampled — generated on CT grid, then
+  cropped. Dose resampled to CT grid only (B-spline). Eliminates mask/dose
+  boundary mismatch that caused PTV70 D95 to read ~55 Gy instead of ≥66.5 Gy.
+- Dose interpolation changed from sitkLinear to sitkBSpline (less boundary smoothing)
+- In-plane crop: 300 voxels centered on prostate centroid (~30cm)
+- Axial crop: dynamic based on structure bounding box + 30mm margin
+- SDFs computed with actual CT spacing (not hardcoded 1x1x2mm)
+- Metadata: voxel_spacing_mm, volume_shape, crop_box, dose_grid_spacing_mm
+- DVH validation: warns if PTV70 D95 < 64 Gy after preprocessing
+- Dose coverage check: warns if >5% of PTV voxels have zero dose
+- New CLI args: --inplane_size (default 300), --z_margin_mm (default 30)
+- Removed CLI args: --target_shape, --target_spacing
+- get_spacing_from_metadata() utility for backwards-compatible spacing lookup
 
 Key Features:
 - Signed Distance Fields (SDFs) for all structures
 - FULL beam geometry from RP file (MLC, dose rate, jaws) - Phase 2 ready
 - Improved truncation quantification
 - HU clipping detection
+- DVH validation per case
 
-.npz File Structure (v2.2.0):
-- ct: (512, 512, 256) float32 - CT normalized [0,1]
-- dose: (512, 512, 256) float32 - Dose normalized to Rx
-- masks: (8, 512, 512, 256) uint8 - Binary structure masks
-- masks_sdf: (8, 512, 512, 256) float32 - Signed distance fields [-1,1]
+.npz File Structure (v2.3.0):
+- ct: (Y, X, Z) float32 - CT normalized [0,1], native resolution cropped
+- dose: (Y, X, Z) float32 - Dose normalized to Rx, on CT grid cropped
+- masks: (8, Y, X, Z) uint8 - Binary structure masks, native grid cropped
+- masks_sdf: (8, Y, X, Z) float32 - Signed distance fields [-1,1]
 - constraints: (13,) float32 - Prescription + OAR constraints
-- metadata: dict - Case info, beam geometry summary, validation
+- metadata: dict - Case info, spacing, crop, beam geometry, validation
 - beam0_mlc_a: (n_cp, n_leaves) float32 - MLC bank A positions per control point
 - beam0_mlc_b: (n_cp, n_leaves) float32 - MLC bank B positions per control point
 - beam1_mlc_a, beam1_mlc_b: (if 2+ arcs)
@@ -103,9 +109,45 @@ STRUCTURE_CHANNELS = {
     # 8: 'PTV50.4',  # Reserved for Phase 2 / 3-level SIB
 }
 
+# Default spacing for backwards compatibility with v2.2 NPZ files
+DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)
+
+# Crop parameters (v2.3+)
+DEFAULT_INPLANE_SIZE = 300  # Voxels: 300 × ~1mm = 30cm, covers pelvis + margin
+DEFAULT_Z_MARGIN_MM = 30.0  # mm beyond structure bounding box (dose falloff margin)
+
 # SDF parameters (can be overridden via command line)
 DEFAULT_SDF_CLIP_MM = 50.0  # Default clip at ±50mm (captures relevant dose gradients)
 # Note: For tighter structures or faster falloff, consider 30mm
+
+
+def get_spacing_from_metadata(metadata):
+    """
+    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
+
+    Fallback chain:
+        1. voxel_spacing_mm (v2.3+ native spacing)
+        2. target_spacing_mm (v2.2 resampled spacing)
+        3. DEFAULT_SPACING_MM (1.0, 1.0, 2.0 — last resort)
+
+    Args:
+        metadata: dict from npz['metadata'].item()
+
+    Returns:
+        tuple: (y_spacing, x_spacing, z_spacing) in mm
+    """
+    if isinstance(metadata, np.ndarray):
+        metadata = metadata.item()
+
+    if 'voxel_spacing_mm' in metadata:
+        spacing = metadata['voxel_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    if 'target_spacing_mm' in metadata:
+        spacing = metadata['target_spacing_mm']
+        return tuple(float(s) for s in spacing)
+
+    return DEFAULT_SPACING_MM
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -687,7 +729,88 @@ def quantify_truncation(mask, structure_name):
     }
 
 
-def validate_preprocessed_data(ct_volume, dose_volume, masks_resampled, prescription_dose, 
+def compute_crop_box(masks, ct_spacing, inplane_size=DEFAULT_INPLANE_SIZE,
+                     z_margin_mm=DEFAULT_Z_MARGIN_MM, min_z=128):
+    """
+    Compute crop box centered on prostate/PTV70 centroid.
+
+    In-plane: fixed `inplane_size` voxels centered on centroid.
+    Axial (Z): bounding box of ALL structures + z_margin_mm, minimum min_z voxels.
+
+    Args:
+        masks: (C, Y, X, Z) uint8 binary masks on CT grid
+        ct_spacing: (y_spacing, x_spacing, z_spacing) in mm
+        inplane_size: number of in-plane voxels per dimension (default 300)
+        z_margin_mm: margin beyond structure bounding box in mm (default 30)
+        min_z: minimum Z extent in voxels (default 128, for patch extraction)
+
+    Returns:
+        dict with keys:
+            y_start, y_end, x_start, x_end, z_start, z_end: crop indices
+            centroid_voxel: (y, x, z) centroid in voxel coords
+    """
+    # Find centroid from prostate (channel 2) or PTV70 (channel 0) fallback
+    ref_mask = masks[2] if masks[2].sum() > 0 else masks[0]
+    nz = np.nonzero(ref_mask)
+    if len(nz[0]) == 0:
+        # Fallback: center of volume
+        cy, cx, cz = [s // 2 for s in masks.shape[1:]]
+    else:
+        cy = int(np.mean(nz[0]))
+        cx = int(np.mean(nz[1]))
+        cz = int(np.mean(nz[2]))
+
+    vol_shape = masks.shape[1:]  # (Y, X, Z)
+
+    # --- In-plane crop (Y, X): fixed size centered on centroid ---
+    half_ip = inplane_size // 2
+    for dim_idx, (center, dim_size) in enumerate([(cy, vol_shape[0]), (cx, vol_shape[1])]):
+        start = max(0, center - half_ip)
+        end = start + inplane_size
+        if end > dim_size:
+            end = dim_size
+            start = max(0, end - inplane_size)
+        if dim_idx == 0:
+            y_start, y_end = start, end
+        else:
+            x_start, x_end = start, end
+
+    # --- Axial crop (Z): bounding box of all structures + margin ---
+    # Union of all non-empty structure masks
+    any_mask = np.any(masks > 0, axis=0)  # (Y, X, Z)
+    z_projection = np.any(any_mask, axis=(0, 1))  # (Z,)
+    z_indices = np.where(z_projection)[0]
+
+    if len(z_indices) == 0:
+        # No structures — use center ± min_z/2
+        z_start = max(0, cz - min_z // 2)
+        z_end = min(vol_shape[2], z_start + min_z)
+    else:
+        z_spacing = ct_spacing[2]
+        margin_voxels = int(np.ceil(z_margin_mm / z_spacing))
+
+        z_start = max(0, z_indices[0] - margin_voxels)
+        z_end = min(vol_shape[2], z_indices[-1] + 1 + margin_voxels)
+
+        # Enforce minimum Z extent (expand from center if needed)
+        z_extent = z_end - z_start
+        if z_extent < min_z:
+            z_center = (z_start + z_end) // 2
+            z_start = max(0, z_center - min_z // 2)
+            z_end = min(vol_shape[2], z_start + min_z)
+            # Re-check if we hit the boundary
+            if z_end - z_start < min_z:
+                z_start = max(0, z_end - min_z)
+
+    return {
+        'y_start': int(y_start), 'y_end': int(y_end),
+        'x_start': int(x_start), 'x_end': int(x_end),
+        'z_start': int(z_start), 'z_end': int(z_end),
+        'centroid_voxel': (int(cy), int(cx), int(cz)),
+    }
+
+
+def validate_preprocessed_data(ct_volume, dose_volume, masks_resampled, prescription_dose,
                                 ct_raw_min=None, ct_raw_max=None):
     """
     Validate preprocessed data before saving.
@@ -769,25 +892,29 @@ def validate_preprocessed_data(ct_volume, dose_volume, masks_resampled, prescrip
     return checks
 
 
-def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 512, 256), 
-                        target_spacing=(1.0, 1.0, 2.0), relax_filter=False, skip_plots=False,
-                        strict_validation=False, compute_sdfs=True, extract_beams=True,
-                        sdf_clip_mm=DEFAULT_SDF_CLIP_MM):
+def preprocess_dicom_rt(plan_dir, output_dir, structure_map, relax_filter=False,
+                        skip_plots=False, strict_validation=False, compute_sdfs=True,
+                        extract_beams=True, sdf_clip_mm=DEFAULT_SDF_CLIP_MM,
+                        inplane_size=DEFAULT_INPLANE_SIZE, z_margin_mm=DEFAULT_Z_MARGIN_MM):
     """
     Process a single DICOM-RT plan directory.
+
+    v2.3 pipeline: keeps CT and masks at native resolution, resamples only
+    dose (coarse grid) to CT grid using B-spline interpolation, then crops
+    to a fixed physical extent centered on the prostate.
 
     Args:
         plan_dir (str): Path to case dir with DICOM files.
         output_dir (str): Output directory for .npz and PNGs.
         structure_map (dict): OAR mapping from JSON.
-        target_shape (tuple): Fixed output shape (default 512x512x256).
-        target_spacing (tuple): Target voxel spacing (default 1x1x2 mm).
         relax_filter (bool): Process cases without PTV56.
         skip_plots (bool): Skip debug PNGs.
         strict_validation (bool): Fail on validation issues.
         compute_sdfs (bool): Compute signed distance fields for masks.
         extract_beams (bool): Extract beam geometry from RP file.
         sdf_clip_mm (float): Clip SDF values at ±this distance in mm.
+        inplane_size (int): In-plane crop size in voxels (default 300).
+        z_margin_mm (float): Axial margin beyond structures in mm (default 30).
 
     Returns:
         str: Path to output .npz or None on error.
@@ -858,35 +985,7 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         constraints, constraint_descriptions = build_constraints_vector(case_type_info, prescription_info)
         
         # =================================================================
-        # Compute centering
-        # =================================================================
-        prostate_mask = masks[2] if masks[2].sum() > 0 else masks[0]
-        
-        nonzero = np.nonzero(prostate_mask)
-        if len(nonzero[0]) == 0:
-            warnings.warn("No prostate/PTV mask; centering on mid-volume")
-            mid_y, mid_x, mid_z = [s / 2 for s in prostate_mask.shape]
-            centroid_phys_x = position[0] + mid_x * ct_spacing[0]
-            centroid_phys_y = position[1] + mid_y * ct_spacing[1]
-            centroid_phys_z = position[2] + mid_z * ct_spacing[2]
-        else:
-            phys_x = position[0] + nonzero[1] * ct_spacing[0]
-            phys_y = position[1] + nonzero[0] * ct_spacing[1]
-            phys_z = slice_z[nonzero[2]]
-            centroid_phys_x = np.mean(phys_x)
-            centroid_phys_y = np.mean(phys_y)
-            centroid_phys_z = np.mean(phys_z)
-        
-        # =================================================================
-        # Create SimpleITK images
-        # =================================================================
-        ct_array_sitk = ct_volume_raw.transpose(2, 0, 1)
-        ct_image = sitk.GetImageFromArray(ct_array_sitk)
-        ct_image.SetSpacing((ct_spacing[0], ct_spacing[1], ct_spacing[2]))
-        ct_image.SetOrigin((position[0], position[1], position[2]))
-        
-        # =================================================================
-        # Load dose
+        # Load dose grid
         # =================================================================
         rtdose_file = [f for f in os.listdir(plan_dir) if f.startswith('RD')][0]
         dose_ds = pydicom.dcmread(os.path.join(plan_dir, rtdose_file))
@@ -894,12 +993,10 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         dose_array = dose_ds.pixel_array.astype(np.float32) * dose_scaling
         if dose_array.ndim != 3:
             raise ValueError("Dose not 3D")
-        print(f"Dose original shape: {dose_array.shape}")
-        
-        dose_array_sitk = dose_array
+
         dose_position = [float(x) for x in dose_ds.ImagePositionPatient]
         dose_pixel_spacing = [float(x) for x in dose_ds.PixelSpacing]
-        
+
         if 'GridFrameOffsetVector' in dose_ds:
             offsets = [float(o) for o in dose_ds.GridFrameOffsetVector]
             if len(offsets) != dose_array.shape[0]:
@@ -910,80 +1007,103 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
             dose_z_positions = [dose_position[2]]
             if dose_array.shape[0] != 1:
                 raise ValueError("Multi-frame dose without GridFrameOffsetVector")
-        
+
         sort_idx = np.argsort(dose_z_positions)
         if not np.all(sort_idx == np.arange(len(sort_idx))):
             warnings.warn("Sorting dose z-positions")
-            dose_array_sitk = dose_array_sitk[sort_idx]
+            dose_array = dose_array[sort_idx]
             dose_z_positions = [dose_z_positions[i] for i in sort_idx]
-        
+
         if len(dose_z_positions) > 1:
             diffs = np.diff(dose_z_positions)
-            dose_z_spacing = np.mean(diffs)
+            dose_z_spacing = float(np.mean(diffs))
         else:
             dose_z_spacing = ct_spacing[2]
+
+        dose_grid_spacing = (dose_pixel_spacing[0], dose_pixel_spacing[1], dose_z_spacing)
+        print(f"Dose grid: shape={dose_array.shape}, spacing={dose_grid_spacing}")
+
+        # =================================================================
+        # Resample dose to CT grid using B-spline (the one unavoidable
+        # interpolation — upsampling coarse dose to finer CT resolution)
+        # =================================================================
+        # Create SimpleITK images for dose and CT reference
+        dose_image = sitk.GetImageFromArray(dose_array)  # (Z, Y, X) ordering
+        dose_image.SetSpacing((dose_pixel_spacing[0], dose_pixel_spacing[1], dose_z_spacing))
+        dose_image.SetOrigin((dose_position[0], dose_position[1], dose_z_positions[0]))
+
+        ct_array_sitk = ct_volume_raw.transpose(2, 0, 1)  # (Y, X, Z) → (Z, Y, X)
+        ct_reference = sitk.GetImageFromArray(ct_array_sitk.astype(np.float32))
+        ct_reference.SetSpacing((ct_spacing[0], ct_spacing[1], ct_spacing[2]))
+        ct_reference.SetOrigin((position[0], position[1], position[2]))
+
+        # B-spline interpolation: less smoothing at boundaries than trilinear
+        dose_on_ct_grid = resample_image(dose_image, ct_reference, sitk.sitkBSpline)
+        dose_on_ct = sitk.GetArrayFromImage(dose_on_ct_grid).transpose(1, 2, 0)  # (Z,Y,X)→(Y,X,Z)
+        dose_on_ct = np.maximum(dose_on_ct, 0)  # Clamp negative artifacts from B-spline
+
+        print(f"Dose resampled to CT grid: {dose_on_ct.shape} (native CT resolution)")
+
+        # =================================================================
+        # Compute crop box (centered on prostate, dynamic Z)
+        # =================================================================
+        crop = compute_crop_box(masks, ct_spacing, inplane_size=inplane_size,
+                                z_margin_mm=z_margin_mm)
+        ys, ye = crop['y_start'], crop['y_end']
+        xs, xe = crop['x_start'], crop['x_end']
+        zs, ze = crop['z_start'], crop['z_end']
+
+        print(f"Crop box: Y=[{ys}:{ye}], X=[{xs}:{xe}], Z=[{zs}:{ze}]")
+        print(f"  Output shape: ({ye-ys}, {xe-xs}, {ze-zs})")
+        print(f"  Physical extent: {(ye-ys)*ct_spacing[1]:.0f} x {(xe-xs)*ct_spacing[0]:.0f} x {(ze-zs)*ct_spacing[2]:.0f} mm")
+
+        # =================================================================
+        # Crop all volumes (integer indexing — no interpolation)
+        # =================================================================
+        ct_cropped = ct_volume_raw[ys:ye, xs:xe, zs:ze]
+        dose_cropped = dose_on_ct[ys:ye, xs:xe, zs:ze]
+        masks_cropped = masks[:, ys:ye, xs:xe, zs:ze]
+
+        output_shape = ct_cropped.shape
+
+        # =================================================================
+        # Normalize CT and dose on cropped volumes
+        # =================================================================
+        ct_volume_normalized = np.clip(ct_cropped, -1000, 3000) / 4000 + 0.5
+        dose_volume = dose_cropped / normalization_dose
+        masks_resampled = masks_cropped  # Rename for compatibility with downstream code
+
+        print(f"Cropped PTV70 sum: {masks_resampled[0].sum()}, PTV56 sum: {masks_resampled[1].sum()}")
+
+        # =================================================================
+        # DVH validation: check PTV70 D95 on preprocessed data
+        # =================================================================
+        ptv70_mask_bool = masks_resampled[0] > 0
+        if ptv70_mask_bool.sum() > 0:
+            ptv70_dose_gy = dose_volume[ptv70_mask_bool] * normalization_dose
+            ptv70_d95_gy = float(np.percentile(ptv70_dose_gy, 5))  # D95 = 5th percentile
+            print(f"PTV70 D95 validation: {ptv70_d95_gy:.1f} Gy (target >= 64.0 Gy)")
+            if ptv70_d95_gy < 64.0:
+                warnings.warn(f"WARNING: PTV70 D95 = {ptv70_d95_gy:.1f} Gy < 64.0 Gy — "
+                             f"possible pipeline artifact for {plan_id}")
+
+            # Check dose coverage: warn if >5% of PTV voxels have zero dose
+            zero_dose_frac = float((ptv70_dose_gy < 0.1).sum()) / ptv70_mask_bool.sum()
+            if zero_dose_frac > 0.05:
+                warnings.warn(f"WARNING: {zero_dose_frac:.1%} of PTV70 voxels have near-zero "
+                             f"dose — dose grid may not fully cover PTV for {plan_id}")
         
-        dose_spacing_sitk = (dose_pixel_spacing[0], dose_pixel_spacing[1], dose_z_spacing)
-        dose_origin_sitk = (dose_position[0], dose_position[1], dose_z_positions[0])
-        dose_image = sitk.GetImageFromArray(dose_array_sitk)
-        dose_image.SetSpacing(dose_spacing_sitk)
-        dose_image.SetOrigin(dose_origin_sitk)
-        
         # =================================================================
-        # Define reference grid
-        # =================================================================
-        target_size_sitk = (target_shape[1], target_shape[0], target_shape[2])
-        target_spacing_sitk = (target_spacing[0], target_spacing[1], target_spacing[2])
-        target_origin_sitk = (
-            centroid_phys_x - (target_size_sitk[0] * target_spacing_sitk[0]) / 2,
-            centroid_phys_y - (target_size_sitk[1] * target_spacing_sitk[1]) / 2,
-            centroid_phys_z - (target_size_sitk[2] * target_spacing_sitk[2]) / 2
-        )
-        reference_image = sitk.Image(target_size_sitk, sitk.sitkFloat32)
-        reference_image.SetSpacing(target_spacing_sitk)
-        reference_image.SetOrigin(target_origin_sitk)
-        
-        # =================================================================
-        # Resample CT
-        # =================================================================
-        ct_resampled = resample_image(ct_image, reference_image, sitk.sitkLinear)
-        ct_array = sitk.GetArrayFromImage(ct_resampled).transpose(1, 2, 0)
-        ct_volume_normalized = np.clip(ct_array, -1000, 3000) / 4000 + 0.5
-        
-        # =================================================================
-        # Resample dose
-        # =================================================================
-        dose_resampled = resample_image(dose_image, reference_image, sitk.sitkLinear)
-        dose_volume = sitk.GetArrayFromImage(dose_resampled).transpose(1, 2, 0) / normalization_dose
-        dose_volume = np.maximum(dose_volume, 0)
-        
-        # =================================================================
-        # Resample masks
-        # =================================================================
-        masks_resampled = np.zeros((len(structure_map),) + target_shape, dtype=np.uint8)
-        for ch_str, _ in structure_map.items():
-            ch = int(ch_str)
-            mask_original = masks[ch]
-            mask_array_sitk = mask_original.transpose(2, 0, 1)
-            mask_image = sitk.GetImageFromArray(mask_array_sitk.astype(np.float32))
-            mask_image.SetSpacing(ct_image.GetSpacing())
-            mask_image.SetOrigin(ct_image.GetOrigin())
-            mask_res = resample_image(mask_image, reference_image, sitk.sitkNearestNeighbor)
-            mask_array = sitk.GetArrayFromImage(mask_res).transpose(1, 2, 0)
-            masks_resampled[ch] = (mask_array > 0.5).astype(np.uint8)
-        
-        print(f"Resampled PTV70 sum: {masks_resampled[0].sum()}, PTV56 sum: {masks_resampled[1].sum()}")
-        
-        # =================================================================
-        # Compute SDFs
+        # Compute SDFs (using actual CT spacing, not hardcoded)
         # =================================================================
         masks_sdf = None
         sdf_validation = None
         if compute_sdfs:
-            print(f"Computing SDFs (clip={sdf_clip_mm}mm)...")
-            masks_sdf = np.zeros((len(structure_map),) + target_shape, dtype=np.float32)
+            actual_spacing = (ct_spacing[1], ct_spacing[0], ct_spacing[2])  # Y, X, Z
+            print(f"Computing SDFs (clip={sdf_clip_mm}mm, spacing={actual_spacing})...")
+            masks_sdf = np.zeros((len(structure_map),) + output_shape, dtype=np.float32)
             for ch in range(len(structure_map)):
-                masks_sdf[ch] = compute_sdf(masks_resampled[ch], spacing_mm=target_spacing, 
+                masks_sdf[ch] = compute_sdf(masks_resampled[ch], spacing_mm=actual_spacing,
                                             clip_mm=sdf_clip_mm)
             print(f"SDFs computed: shape {masks_sdf.shape}")
             
@@ -1037,15 +1157,18 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         metadata = {
             'case_id': plan_id,
             'processed_date': datetime.now().isoformat(),
-            'script_version': '2.2.0',
+            'script_version': '2.3.0',
             'prescription_info': prescription_info,
             'case_type': case_type_info,
             'normalization_dose_gy': normalization_dose,
-            'target_shape': target_shape,
-            'target_spacing_mm': target_spacing,
+            # v2.3: native spacing and crop (replaces target_shape/target_spacing)
+            'voxel_spacing_mm': (float(ct_spacing[1]), float(ct_spacing[0]), float(ct_spacing[2])),
+            'volume_shape': output_shape,
+            'crop_box': crop,
+            'dose_grid_spacing_mm': tuple(float(s) for s in dose_grid_spacing),
             'sdf_clip_mm': sdf_clip_mm if compute_sdfs else None,
             'sdf_validation': sdf_validation,
-            'validation': {k: v for k, v in validation.items() 
+            'validation': {k: v for k, v in validation.items()
                           if k not in ['truncation_info']},
             'truncation_info': validation.get('truncation_info', {}),
             'structure_channels': STRUCTURE_CHANNELS,
@@ -1079,7 +1202,7 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         # =================================================================
         if not skip_plots:
             fig, axs = plt.subplots(2, 4, figsize=(20, 10))
-            mid = target_shape[2] // 2
+            mid = output_shape[2] // 2
             
             # Row 1: CT, Dose, PTVs, SDFs
             axs[0, 0].imshow(ct_volume_normalized[:, :, mid], cmap='gray', vmin=0, vmax=1)
@@ -1163,25 +1286,28 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, target_shape=(512, 
         return None
 
 
-def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json', 
+def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json',
                      relax_filter=False, skip_plots=False, strict_validation=False,
-                     compute_sdfs=True, extract_beams=True, sdf_clip_mm=DEFAULT_SDF_CLIP_MM):
+                     compute_sdfs=True, extract_beams=True, sdf_clip_mm=DEFAULT_SDF_CLIP_MM,
+                     inplane_size=DEFAULT_INPLANE_SIZE, z_margin_mm=DEFAULT_Z_MARGIN_MM):
     """Batch process multiple plan directories."""
     structure_map = load_json_mapping(mapping_file)
-    plan_dirs = sorted([os.path.join(input_base_dir, d) for d in os.listdir(input_base_dir) 
+    plan_dirs = sorted([os.path.join(input_base_dir, d) for d in os.listdir(input_base_dir)
                         if os.path.isdir(os.path.join(input_base_dir, d))])
-    
+
     processed = []
     failed = []
-    
+
     for plan_dir in plan_dirs:
-        result = preprocess_dicom_rt(plan_dir, output_dir, structure_map, 
-                                      relax_filter=relax_filter, 
+        result = preprocess_dicom_rt(plan_dir, output_dir, structure_map,
+                                      relax_filter=relax_filter,
                                       skip_plots=skip_plots,
                                       strict_validation=strict_validation,
                                       compute_sdfs=compute_sdfs,
                                       extract_beams=extract_beams,
-                                      sdf_clip_mm=sdf_clip_mm)
+                                      sdf_clip_mm=sdf_clip_mm,
+                                      inplane_size=inplane_size,
+                                      z_margin_mm=z_margin_mm)
         if result:
             processed.append(result)
         else:
@@ -1199,7 +1325,7 @@ def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json'
     summary_path = os.path.join(output_dir, 'batch_summary.json')
     summary = {
         'processed_date': datetime.now().isoformat(),
-        'script_version': '2.2.0',
+        'script_version': '2.3.0',
         'total_cases': len(plan_dirs),
         'processed': len(processed),
         'failed': len(failed),
@@ -1209,8 +1335,10 @@ def batch_preprocess(input_base_dir, output_dir, mapping_file='oar_mapping.json'
             'strict_validation': strict_validation,
             'compute_sdfs': compute_sdfs,
             'extract_beams': extract_beams,
-            'extract_mlc': extract_beams,  # MLC is now always extracted with beams
+            'extract_mlc': extract_beams,
             'sdf_clip_mm': sdf_clip_mm if compute_sdfs else None,
+            'inplane_size': inplane_size,
+            'z_margin_mm': z_margin_mm,
         }
     }
     with open(summary_path, 'w') as f:
@@ -1267,7 +1395,7 @@ if __name__ == "__main__":
     # Get environment-appropriate defaults
     default_input, default_output = get_default_paths()
 
-    parser = argparse.ArgumentParser(description="Preprocess DICOM-RT to .npz for VMAT diffusion model (v2.2.0 - Phase 2 Ready)")
+    parser = argparse.ArgumentParser(description="Preprocess DICOM-RT to .npz for VMAT diffusion model (v2.3.0 - Crop Pipeline)")
     parser.add_argument("--input_dir", default=default_input,
                         help=f"Directory containing DICOM-RT case folders (default: {default_input})")
     parser.add_argument("--output_dir", default=default_output,
@@ -1280,16 +1408,22 @@ if __name__ == "__main__":
     parser.add_argument("--no_beams", action="store_true", help="Skip beam/MLC geometry extraction")
     parser.add_argument("--sdf_clip_mm", type=float, default=DEFAULT_SDF_CLIP_MM,
                         help=f"SDF clip distance in mm (default: {DEFAULT_SDF_CLIP_MM})")
+    parser.add_argument("--inplane_size", type=int, default=DEFAULT_INPLANE_SIZE,
+                        help=f"In-plane crop size in voxels (default: {DEFAULT_INPLANE_SIZE})")
+    parser.add_argument("--z_margin_mm", type=float, default=DEFAULT_Z_MARGIN_MM,
+                        help=f"Axial margin beyond structures in mm (default: {DEFAULT_Z_MARGIN_MM})")
     args = parser.parse_args()
 
     input_dir = os.path.expanduser(args.input_dir)
     output_dir = os.path.expanduser(args.output_dir)
-    
-    batch_preprocess(input_dir, output_dir, args.mapping_file, 
+
+    batch_preprocess(input_dir, output_dir, args.mapping_file,
                      args.relax_filter, args.skip_plots, args.strict_validation,
                      compute_sdfs=not args.no_sdf,
                      extract_beams=not args.no_beams,
-                     sdf_clip_mm=args.sdf_clip_mm)
+                     sdf_clip_mm=args.sdf_clip_mm,
+                     inplane_size=args.inplane_size,
+                     z_margin_mm=args.z_margin_mm)
 
 
 # =============================================================================
