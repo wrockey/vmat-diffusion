@@ -364,8 +364,8 @@ Reverse chronological. One entry per session. Captures what was done so the next
 |---------|-------|
 | Platform | WSL2 Ubuntu 24.04 LTS |
 | Project | `/home/wrockey/projects/vmat-diffusion` |
-| Data (raw DICOM) | `/home/wrockey/data/dicom/` (Linux filesystem, NOT /mnt/c/) |
-| Data (processed NPZ) | `/home/wrockey/data/vmat-diffusion/` |
+| Data (anonymized DICOM) | `~/data/anonymized_dicom/` (Linux filesystem, NOT /mnt/c/) |
+| Data (processed NPZ) | `~/data/processed_npz/` (created by preprocessing script) |
 | Conda | Miniforge3 (`~/miniforge3`), env: `vmat-diffusion` |
 | Python | 3.12.12 |
 | PyTorch | 2.10.0+cu126 |
