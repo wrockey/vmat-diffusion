@@ -161,18 +161,60 @@ def load_json_mapping(mapping_file='oar_mapping.json'):
         return json.load(f)
 
 
+def find_dicom_files(plan_dir, prefix_patterns, recursive=False):
+    """Find DICOM files matching any of the given prefix patterns.
+
+    Skips Zone.Identifier files (Windows download artifacts).
+    If recursive=True, searches subdirectories as well.
+
+    Args:
+        plan_dir: Directory to search
+        prefix_patterns: List of filename prefixes to match (e.g., ['CT', 'ct'])
+        recursive: Whether to search subdirectories
+
+    Returns:
+        List of full file paths matching the patterns
+    """
+    matches = []
+    if recursive:
+        for root, dirs, files in os.walk(plan_dir):
+            for f in files:
+                if 'Zone.Identifier' in f:
+                    continue
+                if any(f.startswith(p) for p in prefix_patterns):
+                    matches.append(os.path.join(root, f))
+    else:
+        for f in os.listdir(plan_dir):
+            if 'Zone.Identifier' in f:
+                continue
+            if any(f.startswith(p) for p in prefix_patterns):
+                matches.append(os.path.join(plan_dir, f))
+    return matches
+
+
 def get_ct_volume_and_metadata(plan_dir):
     """Load and stack CT slices, sort by Z, compute metadata."""
-    ct_files = [f for f in os.listdir(plan_dir) if f.startswith('CT')]
-    if not ct_files:
+    ct_paths = find_dicom_files(plan_dir, ['CT', 'ct'], recursive=True)
+    if not ct_paths:
         raise ValueError(f"No CT files in {plan_dir}")
-    ct_paths = [os.path.join(plan_dir, f) for f in ct_files]
+    # Filter out non-image files (RTSTRUCT etc. can start with CT prefix in paths)
+    ct_paths = [p for p in ct_paths if not any(
+        kw in os.path.basename(p).upper() for kw in ['RTSTRUCT', 'RTDOSE', 'RTPLAN']
+    )]
+    if not ct_paths:
+        raise ValueError(f"No CT image files in {plan_dir}")
     ct_ds = [pydicom.dcmread(p) for p in ct_paths]
     sorted_indices = np.argsort([float(ds.ImagePositionPatient[2]) for ds in ct_ds])
     ct_ds = [ct_ds[i] for i in sorted_indices]
     slice_z = np.array([float(ds.ImagePositionPatient[2]) for ds in ct_ds])
     print(f"CT z range: min {slice_z.min():.2f}, max {slice_z.max():.2f}, slices {len(slice_z)}, spacing {np.mean(np.diff(slice_z)):.2f}")
-    ct_volume = np.stack([ds.pixel_array.astype(np.float32) for ds in ct_ds], axis=2)
+    # Apply RescaleSlope/RescaleIntercept to convert stored values to HU
+    def _to_hu(ds):
+        arr = ds.pixel_array.astype(np.float32)
+        slope = float(getattr(ds, 'RescaleSlope', 1))
+        intercept = float(getattr(ds, 'RescaleIntercept', 0))
+        return arr * slope + intercept
+    ct_volume = np.stack([_to_hu(ds) for ds in ct_ds], axis=2)
     spacing = np.array([float(ct_ds[0].PixelSpacing[0]), float(ct_ds[0].PixelSpacing[1]), np.mean(np.diff(slice_z))])
     position = np.array([float(x) for x in ct_ds[0].ImagePositionPatient])
     return ct_volume, spacing, position, slice_z, ct_ds
@@ -193,12 +235,12 @@ def extract_prescription_dose(plan_dir):
     }
     
     try:
-        rp_files = [f for f in os.listdir(plan_dir) if f.startswith('RP')]
-        if not rp_files:
+        rp_paths = find_dicom_files(plan_dir, ['RP', 'RTPLAN', 'rtplan'])
+        if not rp_paths:
             warnings.warn(f"No RP file found in {plan_dir}, using default prescription")
             return result
-            
-        rp = pydicom.dcmread(os.path.join(plan_dir, rp_files[0]))
+
+        rp = pydicom.dcmread(rp_paths[0])
         
         # Method 1: DoseReferenceSequence (most reliable)
         if hasattr(rp, 'DoseReferenceSequence'):
@@ -255,11 +297,11 @@ def extract_beam_geometry(plan_dir, include_mlc=True):
         dict: Comprehensive beam geometry (None if RP not found or error)
     """
     try:
-        rp_files = [f for f in os.listdir(plan_dir) if f.startswith('RP')]
-        if not rp_files:
+        rp_paths = find_dicom_files(plan_dir, ['RP', 'RTPLAN', 'rtplan'])
+        if not rp_paths:
             return None
-            
-        rp = pydicom.dcmread(os.path.join(plan_dir, rp_files[0]))
+
+        rp = pydicom.dcmread(rp_paths[0])
         
         if not hasattr(rp, 'BeamSequence'):
             return None
@@ -821,7 +863,8 @@ def validate_preprocessed_data(ct_volume, dose_volume, masks_resampled, prescrip
     checks = {}
     
     # CT checks
-    checks['ct_range_valid'] = (ct_volume.min() >= 0) and (ct_volume.max() <= 1)
+    # CT normalized as clip(-1000,3000)/4000+0.5 → valid range [0.0, 1.25]
+    checks['ct_range_valid'] = (ct_volume.min() >= -0.01) and (ct_volume.max() <= 1.26)
     checks['ct_min'] = float(ct_volume.min())
     checks['ct_max'] = float(ct_volume.max())
     
@@ -949,8 +992,10 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, relax_filter=False,
         # =================================================================
         # Load structure set and create masks
         # =================================================================
-        rtstruct_file = [f for f in os.listdir(plan_dir) if f.startswith('RS')][0]
-        rtstruct = pydicom.dcmread(os.path.join(plan_dir, rtstruct_file))
+        rtstruct_paths = find_dicom_files(plan_dir, ['RS', 'RTSTRUCT', 'rtstruct'])
+        if not rtstruct_paths:
+            raise ValueError(f"No RTSTRUCT file in {plan_dir}")
+        rtstruct = pydicom.dcmread(rtstruct_paths[0])
         
         masks = np.zeros((len(structure_map),) + ct_volume_raw.shape, dtype=np.uint8)
         for ch_str, info in structure_map.items():
@@ -987,8 +1032,10 @@ def preprocess_dicom_rt(plan_dir, output_dir, structure_map, relax_filter=False,
         # =================================================================
         # Load dose grid
         # =================================================================
-        rtdose_file = [f for f in os.listdir(plan_dir) if f.startswith('RD')][0]
-        dose_ds = pydicom.dcmread(os.path.join(plan_dir, rtdose_file))
+        rtdose_paths = find_dicom_files(plan_dir, ['RD', 'RTDOSE', 'rtdose'])
+        if not rtdose_paths:
+            raise ValueError(f"No RTDOSE file in {plan_dir}")
+        dose_ds = pydicom.dcmread(rtdose_paths[0])
         dose_scaling = float(dose_ds.DoseGridScaling)
         dose_array = dose_ds.pixel_array.astype(np.float32) * dose_scaling
         if dose_array.ndim != 3:

@@ -69,7 +69,16 @@
             "ptv70aphs702ap",
             "ptv70aphs703ap",
             "ptv70aphs704ap",
-            "ptv70aprs704ap"
+            "ptv70aprs704ap",
+            "PTV 7000",
+            "PTV_7000",
+            "PTV7000",
+            "PTV7000ssr",
+            "PTV7000eval",
+            "CTV_7000",
+            "ptv7000",
+            "ptv7000ssr",
+            "ptv7000eval"
         ]
     },
     "1": {
@@ -133,7 +142,11 @@
             "ptv56aphs562ap",
             "ptv56aphs563ap",
             "ptv56aphs564ap",
-            "sv"
+            "sv",
+            "PTV 5600",
+            "PTV_5600",
+            "PTV5600",
+            "ptv5600"
         ]
     },
     "2": {
@@ -206,14 +219,18 @@
         "name": "femur_l",
         "variations": [
             "Femur_L",
-            "femurl"
+            "Femur_Head_L",
+            "femurl",
+            "femurheadl"
         ]
     },
     "6": {
         "name": "femur_r",
         "variations": [
             "Femur_R",
-            "femurr"
+            "Femur_Head_R",
+            "femurr",
+            "femurheadr"
         ]
     },
     "7": {
@@ -228,7 +245,17 @@
             "bowelenap",
             "bowelenap0ap",
             "resdbowelap",
-            "resdbowelap0ap"
+            "resdbowelap0ap",
+            "Small Bowel",
+            "Large Bowel",
+            "Sm Bowel",
+            "Lg Bowel",
+            "Bowel within hernia",
+            "smallbowel",
+            "largebowel",
+            "smbowel",
+            "lgbowel",
+            "bowelwithinhernia"
         ]
     }
 }
