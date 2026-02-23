@@ -169,13 +169,13 @@ All components already implemented in prior experiments — need to combine with
 
 ## CURRENT STATE (as of 2026-02-23)
 
-### Current Phase: Phase 0 (Setup) — Nothing started yet
+### Current Phase: Phase 0 (Setup) — Data collection in progress
 
-All active issues are in Todo. The critical path is Phase 0 → 1 → 2 → 3, strictly sequential.
+**Dataset:** ~70 additional anonymized prostate DICOM-RT cases collected so far. Expected total: **250-300 cases** (original 23 pilot + ~230-280 new). This is well above the literature threshold for publishable results.
 
 **Immediate blockers:**
 - #1 WSL dev environment setup (first step)
-- #2 Collect 100+ cases (external dependency — `status/needs-data`)
+- #2 Collect and anonymize remaining cases (in progress — ~70 of ~250-300 collected)
 - #4 Fix D95 pipeline artifact (CRITICAL — blocks all DVH evaluation)
 
 ### Transition: Home (Pilot) → Work (Production)
@@ -258,7 +258,7 @@ Key items (see GitHub Issues with `phase/2-combined` label):
 2. **Uncertainty Weighting (Kendall 2018):** Learn σ per loss, weights = 1/(2σ²)
 3. **Fallback:** GradNorm if any loss dominates
 
-**Expected results with 100+ cases:**
+**Expected results with 250-300 cases:**
 - Global 3%/3mm: 75-88% (literature benchmark)
 - PTV-region 3%/3mm: 90-95%+
 - Publishable results with multi-seed statistics
