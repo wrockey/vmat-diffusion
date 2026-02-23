@@ -78,7 +78,22 @@
             "CTV_7000",
             "ptv7000",
             "ptv7000ssr",
-            "ptv7000eval"
+            "ptv7000eval",
+            "PTV 7000 JC",
+            "PTV7000 JC",
+            "PTV7000new",
+            "PTV70 OA",
+            "PTV70-MS",
+            "PTV7000-MS",
+            "PTV70_QK",
+            "PTV70 at 2.5 Gy per fx - MS",
+            "ptv7000jc",
+            "ptv7000new",
+            "ptv70oa",
+            "ptv70ms",
+            "ptv7000ms",
+            "ptv70qk",
+            "ptv70at25perfxms"
         ]
     },
     "1": {
@@ -146,13 +161,27 @@
             "PTV 5600",
             "PTV_5600",
             "PTV5600",
-            "ptv5600"
+            "PTV 5600 JC",
+            "PTV5600 JC",
+            "PTV56-MS",
+            "PTV56 at 2.0 Gy per fx2 - MS",
+            "PlanningPTV5600",
+            "pptv5600",
+            "ptv5600",
+            "ptv5600jc",
+            "ptv56ms",
+            "ptv56at20perfx2ms",
+            "planningptv5600",
+            "pptv5600"
         ]
     },
     "2": {
         "name": "prostate",
         "variations": [
-            "prostate"
+            "Prostate",
+            "Prostate JC",
+            "prostate",
+            "prostatejc"
         ]
     },
     "3": {
@@ -251,11 +280,25 @@
             "Sm Bowel",
             "Lg Bowel",
             "Bowel within hernia",
+            "Bowel_Lg",
+            "Bowel_Sm",
+            "Bowel_large",
+            "Bowel_small",
+            "Bowel Small",
+            "Bowel Large",
+            "Sigmoid",
+            "bowel avoid",
             "smallbowel",
             "largebowel",
             "smbowel",
             "lgbowel",
-            "bowelwithinhernia"
+            "bowelwithinhernia",
+            "bowellg",
+            "bowelsm",
+            "bowellarge",
+            "bowelsmall",
+            "sigmoid",
+            "bowelavoid"
         ]
     }
 }
