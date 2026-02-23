@@ -17,6 +17,15 @@ venv.bak/
 .vscode/
 .history
 
+# Credentials and API keys (NEVER commit)
+*.json.key
+*credentials*.json
+*private_key*.json
+*proknow*.json
+*api_key*
+*.secret
+*.pem
+
 # Large data (never commit raw or processed medical imaging)
 data/
 data/raw/

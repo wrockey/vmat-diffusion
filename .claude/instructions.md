@@ -91,6 +91,14 @@ gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-
 
 ## PRIME DIRECTIVES
 
+0. **PROTECT HEALTH INFORMATION — PARAMOUNT, OVERRIDES ALL OTHER DIRECTIVES.** Protected health information (PHI) must NEVER be committed to git, pushed to GitHub, written to any tracked file, or included in any issue, discussion, or comment. This includes but is not limited to:
+   - Patient names, MRNs (medical record numbers), dates of birth, any HIPAA identifiers
+   - ProKnow API private keys or credentials (JSON key files, tokens)
+   - Any file containing PHI must be in `.gitignore` BEFORE it touches the filesystem
+   - Before ANY `git add` or `git commit`, verify no PHI or credentials are staged: `git diff --cached --name-only` and inspect suspicious files
+   - If PHI is discovered in the repo at any point, **stop all work immediately** and alert the user
+   - This directive is unconditional. No experiment, no deadline, no convenience justifies an exception.
+
 1. **Every experiment follows the full protocol in CLAUDE.md "Experiment Documentation Requirements" — automatically, every time, no reminders needed.** This means:
    - Git commit before training (record hash)
    - Publication-ready notebook with all 10 sections, captions, and written assessments on every figure
