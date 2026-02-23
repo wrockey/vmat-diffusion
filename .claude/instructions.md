@@ -358,14 +358,19 @@ Reverse chronological. One entry per session. Captures what was done so the next
 
 ## PLATFORM REFERENCE
 
-### Work Machine (Active — update paths after setup)
+### Work Machine (Active)
 
 | Setting | Value |
 |---------|-------|
-| Platform | WSL2 (Ubuntu) on Windows — recommended for both Claude Code and training |
-| Project | TBD (update after setup) |
-| Data | TBD — store on Linux filesystem, NOT /mnt/c/ (100+ cases) |
-| Conda env | `vmat-diffusion` (`environment.yml`) |
+| Platform | WSL2 Ubuntu 24.04 LTS |
+| Project | `/home/wrockey/projects/vmat-diffusion` |
+| Data (raw DICOM) | `/home/wrockey/data/dicom/` (Linux filesystem, NOT /mnt/c/) |
+| Data (processed NPZ) | `/home/wrockey/data/vmat-diffusion/` |
+| Conda | Miniforge3 (`~/miniforge3`), env: `vmat-diffusion` |
+| Python | 3.12.12 |
+| PyTorch | 2.10.0+cu126 |
+| PyTorch Lightning | 2.6.1 |
+| CUDA | 12.6 (driver 560.94) |
 | GPU | NVIDIA RTX 3090 (24 GB) |
 
 ### Home Machine (Pilot — archived)
