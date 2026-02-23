@@ -18,6 +18,8 @@
 
 ### Documentation Rules
 
+- **GitHub is the source of truth for project progress.** Detailed findings, verification results, bug descriptions, and work logs go in GitHub issue comments and commit messages — NOT in this file. If you're writing more than 2-3 lines about something in this file, it probably belongs in a GitHub issue comment instead.
+- **This file stays lean.** It provides orientation (current state, blockers, strategy) and pointers (issue numbers, commit hashes). Target: under 300 lines. If it grows past that, trim session log and move details to GitHub.
 - **Do not create separate plan files.** All planning, strategy, roadmap, and decision content lives HERE.
 - **Individual tasks and TODOs go in GitHub Issues**, not in this file. This file contains the *overview*; issues contain the *details*.
 - **Decision records** live as GitHub Issues with the `type/decision` label (closed when decided). This file has a summary table with issue numbers; issues have the full rationale.
@@ -44,25 +46,24 @@ If any of the above reveals a discrepancy (e.g., issues closed but board not upd
 
 ### End-of-Session Checklist (DO THIS LAST, EVERY SESSION)
 
+**GitHub is the source of truth for project progress.** Detailed work logs go in GitHub (issue comments, commit messages), NOT in this file. This file stays lean — just enough to orient the next session.
+
 Before the session ends, complete ALL of the following:
 
-1. **Update this file:**
-   - Update "CURRENT STATE" date and content to reflect work done
-   - Add a session log entry to the SESSION LOG section
-   - Update the decisions table if any decisions were made
-   - Update the parking lot if new backburner ideas emerged
-2. **Sync GitHub Issues:**
+1. **Update GitHub first (this is where the details go):**
    - Close issues that were completed (with commit references)
+   - Add progress comments to open issues with specific findings/results
    - Create issues for new tasks discovered during the session
    - Update labels/milestones if needed
-3. **Sync project board:**
-   - Move completed items to Done
-   - Move started items to In Progress
-   - Set Phase field on any new items
-4. **Triage AI reviews:**
-   - If new Discussions arrived, summarize them in the session log
-   - Close duplicates, relabel backburner items
-5. **Commit this file:**
+   - Move project board items to correct status (Todo/In Progress/Done)
+2. **Update this file — BRIEFLY:**
+   - Update "CURRENT STATE" date and blockers (2-3 lines max)
+   - Add a 1-line session log entry pointing to commits/issues (see SESSION LOG format)
+   - Update decisions table or parking lot ONLY if those sections changed
+   - **DO NOT duplicate information already in GitHub issues or commit messages**
+3. **Triage AI reviews:**
+   - If new Discussions arrived, triage per workflow below
+4. **Commit this file:**
    ```bash
    git add .claude/instructions.md
    git commit -m "docs: Update project state — <brief summary of session>"
@@ -330,56 +331,12 @@ External AI assistants (Grok, Claude, etc.) review the public repo and provide f
 
 ## SESSION LOG
 
-Reverse chronological. One entry per session. Captures what was done so the next session has context.
+Reverse chronological. **One line per session** — just enough to orient the next session. Details live in git commits and GitHub issue comments.
 
-### 2026-02-23 — Preprocessing pipeline redesign: crop instead of resample (D95 fix)
+Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
-**Work done:**
-- Implemented v2.3.0 preprocessing pipeline to fix CRITICAL D95 artifact (#4)
-  - Root cause: v2.2 resampled CT/dose/masks to fixed 512×512×256 grid. Dose used linear interpolation (smoothed boundary voxels to ~55 Gy), masks used nearest-neighbor (shifted boundary 1-2 voxels). Mismatch corrupted all DVH evaluation.
-  - Fix: keep CT and masks at native resolution, resample only dose to CT grid using B-spline interpolation, then crop to fixed physical extent centered on prostate
-  - In-plane: 300 voxels centered on centroid (~30cm, eliminates ~65% air/table)
-  - Axial: dynamic bounding box of all structures + 30mm margin, min 128 voxels
-  - Typical output: ~300×300×160 (78% size reduction)
-- Added `get_spacing_from_metadata()` utility with backwards-compatible fallback chain (voxel_spacing_mm → target_spacing_mm → DEFAULT_SPACING_MM)
-- Added `compute_crop_box()` function for anatomy-centered cropping
-- Updated all 7 downstream scripts to read spacing from NPZ metadata:
-  - train_baseline_unet.py, train_dose_ddpm_v2.py, inference_dose_ddpm.py, inference_baseline_unet.py, compute_test_metrics.py, analyze_gamma_metric_hypothesis.py, run_phase1_experiments.py
-- Fixed compute_test_metrics.py wrong DEFAULT_SPACING_MM (was 2.5,2.5,2.5 → now 1.0,1.0,2.0)
-- Fixed StructureWeightedLoss SDF threshold bug (was dividing by voxel_size_mm=2.5, should divide by sdf_clip_mm=50.0)
-- Added DVH validation in preprocessing: warns if PTV70 D95 < 64 Gy
-- Added dose coverage check: warns if >5% PTV voxels have zero dose
-- Updated CLAUDE.md: NPZ format v2.3.0, preprocessing commands, data pipeline description
-- Expert review recommendations adopted: B-spline interpolation, 30mm Z margin, DVH validation, store original dose grid spacing
-
-**Deferred (tracked as backburner):**
-- nnU-Net-style common spacing resampling (#33) — revisit if training shows spacing sensitivity
-- Anisotropic patches (128×128×64) — requires architecture changes
-- HU windowing [-200, 1500] — independent hyperparameter experiment
-
-**Still needed (not code changes):**
-- Reprocess all cases with v2.3.0 pipeline
-- Verify on pilot cases: PTV70 D95 ≥ 66.5 Gy
-- GitHub issue updates (#4 comment, #33 comment, new backburner issues)
-
-### 2026-02-23 — Project board setup, AI review workflow, GitHub infrastructure
-
-**Work done:**
-- Reviewed full project status (all phases, experiments, pilot findings)
-- Set up GitHub Project Board ("VMAT Diffusion Roadmap"):
-  - Added "Phase" custom field with 6 options (Phase 0-3, Backburner, Decision)
-  - Tagged all 28 issues with correct Phase and Status
-  - Decision issues (#24-28) closed and moved to Done
-  - Board has Todo/In Progress/Done columns; user to create filtered views via web UI
-- Enabled GitHub Discussions for AI review feedback
-  - Created guidelines post (Discussion #29)
-  - Created `source/ai-review` label
-- Triaged Grok's first review (Discussion #34):
-  - Closed #30 as duplicate of #4 (D95 bug)
-  - Relabeled #31, #32, #33 as `type/backburner`, set Phase to Backburner on board
-  - Added #31-33 to parking lot in this file
-- Updated this file: added Session Protocols, AI Review Workflow, Session Log, fixed decisions table with issue numbers
-- **No code changes.** Infrastructure/workflow session only.
+- **2026-02-23** — v2.3 preprocessing pipeline: D95 fix verified (70.7–70.8 Gy on pilot cases). Also fixed DICOM discovery, HU rescale, OAR mapping, CT validation. Commits: `fa81a3a`, `a6aecf2`. Issues: #4 (updated+verified), #33 (deferred), #35 #36 (created).
+- **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. No code changes. Issues: #29-34.
 
 **Board views still needed (manual, web UI):**
 - "By Phase" table view grouped by Phase field
