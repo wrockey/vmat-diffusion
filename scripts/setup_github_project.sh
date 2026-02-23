@@ -89,15 +89,11 @@ create_milestone "Phase 1: Evaluation Framework" "Build clinical evaluation fram
 create_milestone "Phase 2: Combined Loss" "First real experiment: combined 5-component loss with uncertainty weighting on 100+ cases"
 create_milestone "Phase 3: Iterate & Publish" "Result-driven iteration, publication preparation, code release"
 
-# Helper to get milestone number by title
-get_milestone() {
-    gh api "repos/$REPO/milestones" --jq ".[] | select(.title==\"$1\") | .number"
-}
-
-MS0=$(get_milestone "Phase 0: Setup")
-MS1=$(get_milestone "Phase 1: Evaluation Framework")
-MS2=$(get_milestone "Phase 2: Combined Loss")
-MS3=$(get_milestone "Phase 3: Iterate & Publish")
+# Milestone titles (gh issue create --milestone expects the title string, not number)
+MS0="Phase 0: Setup"
+MS1="Phase 1: Evaluation Framework"
+MS2="Phase 2: Combined Loss"
+MS3="Phase 3: Iterate & Publish"
 
 # -------------------------------------------------------------------
 # 3. ISSUES
