@@ -172,12 +172,15 @@ All components already implemented in prior experiments — need to combine with
 
 ### Current Phase: Phase 0 (Setup) — Data collection in progress
 
-**Dataset:** ~70 additional anonymized prostate DICOM-RT cases collected so far. Expected total: **250-300 cases** (original 23 pilot + ~230-280 new). This is well above the literature threshold for publishable results.
+**Dataset:** 76 anonymized prostate DICOM-RT cases collected, 74 processed (v2.3.0 pipeline). Expected total: **250-300 cases**. 2 cases failed (data quality — see #4 comments for anomaly report).
 
-**Immediate blockers:**
-- #1 WSL dev environment setup (first step)
-- #2 Collect and anonymize remaining cases (in progress — ~70 of ~250-300 collected)
-- #4 Fix D95 pipeline artifact (CRITICAL — **code complete v2.3.0**, needs reprocessing + verification)
+**Completed this phase:**
+- #1 WSL dev environment (CLOSED)
+- #4 D95 pipeline artifact fix (CLOSED — verified on 74 cases, all D95 >= 66.3 Gy)
+
+**In progress:**
+- #2 Collect and anonymize remaining cases (76 of ~250-300 collected)
+- #3 Preprocess all cases (74/76 done, will reprocess as more arrive)
 
 ### Transition: Home (Pilot) → Work (Production)
 
@@ -335,7 +338,7 @@ Reverse chronological. **One line per session** — just enough to orient the ne
 
 Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
-- **2026-02-23** — v2.3 preprocessing pipeline: D95 fix verified (70.7–70.8 Gy on pilot cases). Also fixed DICOM discovery, HU rescale, OAR mapping, CT validation. Commits: `fa81a3a`, `a6aecf2`. Issues: #4 (updated+verified), #33 (deferred), #35 #36 (created).
+- **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup (#30 dup removed, #2/#3 In Progress, backburner milestones fixed). Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup of #4, #35 #36 created.
 - **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. No code changes. Issues: #29-34.
 
 **Board views still needed (manual, web UI):**
