@@ -216,6 +216,15 @@ There is no pytest suite. Evaluation is done through inference scripts with medi
 
 **MANDATORY: Every experiment MUST be fully documented, logged, reproducible, and publishable. No exceptions.** Treat every experiment as if it will appear in a peer-reviewed journal submission. Incomplete documentation is equivalent to an experiment that never happened.
 
+### Experiment Types
+
+Not all experiments are training runs. Use the appropriate template variant:
+
+| Type | When | Required Sections |
+|------|------|-------------------|
+| **Training experiment** | Training a model, comparing losses, etc. | All 10 sections |
+| **Analysis experiment** | Metric analysis, data exploration, hypothesis testing | Sections 1-3, 6-10 (skip Model/Training config) |
+
 ### Pre-Experiment (REQUIRED before any training run)
 
 1. **Commit all code changes to git** — never run experiments on uncommitted code:
@@ -234,40 +243,30 @@ There is no pytest suite. Evaluation is done through inference scripts with medi
 ### Post-Experiment Documentation (ALL steps REQUIRED)
 
 5. **Create a figure generation script** (`scripts/generate_<exp_name>_figures.py`):
-   - Use existing scripts as templates (e.g., `scripts/generate_grad_loss_figures.py`, `scripts/generate_dvh_loss_figures.py`)
-   - **Every figure must be publication-ready from the start** — there is no "draft" quality:
-     ```python
-     plt.rcParams.update({
-         'font.family': 'serif',
-         'font.size': 12,
-         'figure.dpi': 150,
-         'savefig.dpi': 300,
-         'savefig.bbox': 'tight',
-     })
-     ```
+   - Use existing scripts as templates (e.g., `scripts/generate_grad_loss_figures.py`)
+   - Uses the standard plot configuration (see Publication Figure Standards below)
    - Save every figure as both PNG (300 DPI raster) and PDF (vector) to `runs/<exp_name>/figures/`
-   - Use colorblind-friendly color palettes (see existing scripts for standard palette)
-   - Minimum font size: 12pt. Axes must be labeled with units. Legends must be present.
+   - The notebook **loads** these saved figures — it does NOT regenerate them. This ensures the script is the single source for figures and the notebook stays lightweight.
 
 6. **Create an experiment notebook** (`notebooks/YYYY-MM-DD_<exp_name>.ipynb`):
    - Copy from `notebooks/TEMPLATE_experiment.ipynb`
-   - Reference existing notebooks for format (e.g., `notebooks/2026-01-20_grad_loss_experiment.ipynb`)
-   - **All 10 sections are required:**
-     1. **Overview** — Objective, hypothesis, key results summary, conclusion
-     2. **Reproducibility Information** — Git commit hash, Python/PyTorch/CUDA versions, GPU model, exact command to reproduce
-     3. **Dataset Information** — Number of cases, split, preprocessing version
-     4. **Model/Method Configuration** — Architecture, loss functions, conditioning
-     5. **Training Configuration** — Epochs, LR, batch size, patch size, augmentations
-     6. **Results** — Embedded publication-ready figures with descriptive captions. Every figure must have a caption explaining what it shows and why it matters.
-     7. **Analysis** — Observations, comparison to all prior experiments, statistical assessment, limitations
-     8. **Conclusions and Recommendations** — What worked, what didn't, and why
-     9. **Next Steps** — What this experiment motivates
+   - **All sections must be fully filled in** — no `None`, `[UPDATE]`, or placeholder values may remain in the final notebook.
+   - **Required sections for training experiments:**
+     1. **Overview** — Objective, hypothesis, key results summary, 1-2 sentence conclusion
+     2. **What Changed** — Exactly one table: "Compared to [prior experiment], this experiment changes X. Everything else is identical." A reader must immediately know the single variable under test.
+     3. **Reproducibility** — Git commit hash, Python/PyTorch/CUDA versions, GPU model, random seed, exact CLI command, conda environment snapshot
+     4. **Dataset** — Case count, train/val/test case IDs (not just counts), preprocessing version, data file checksums or batch_summary.json reference
+     5. **Model & Training Configuration** — Architecture, loss functions, all hyperparameters
+     6. **Results** — Required figures (see Medical Physics Figure Set below), each with caption and "Key observations" bullets
+     7. **Statistical Analysis** — For n>=10: confidence intervals (95% CI), effect sizes vs baseline. For multi-seed: mean +/- std across seeds. For comparisons: paired test (Wilcoxon signed-rank) with p-values. Box plots, not bar charts.
+     8. **Cross-Experiment Comparison** — Table comparing this experiment to ALL prior experiments on the same standardized metrics. Same format every time.
+     9. **Conclusions, Limitations, and Next Steps** — What worked, what didn't, what this motivates, honest limitations
      10. **Artifacts** — Table of file paths (checkpoints, configs, predictions, figures)
-   - **Figures in notebooks must include captions and written assessments** — a figure without interpretation is useless. Explain what the reader should observe, what it means clinically, and how it compares to prior results.
+   - **Figure captions are mandatory.** Every figure must have: (a) what it shows, (b) what the reader should observe, (c) what it means clinically, (d) how it compares to prior results.
 
 7. **Update the experiment index** (`notebooks/EXPERIMENTS_INDEX.md`):
    - This is the **single source of truth** for all experiments ever run
-   - Add a row with: Date, Experiment ID, Git commit hash, Notebook link, Model type, Key metrics (MAE, Gamma, D95), Status
+   - Add a row with standardized columns (see EXPERIMENTS_INDEX format below)
    - If an experiment is not in this index, it does not exist
 
 8. **Commit all documentation**:
@@ -285,24 +284,93 @@ Every experiment must record:
 - **Python version**, PyTorch version, CUDA version, GPU model
 - **Random seed** (use 42 unless documented otherwise)
 - **Exact CLI command** to reproduce the run
-- **Data split** used (case IDs for train/val/test)
+- **Data split** used (**actual case IDs** for train/val/test — not just counts)
+- **Preprocessing version** and reference to `batch_summary.json` (data provenance)
 - **All hyperparameters** (saved automatically to `training_config.json`)
+- **Conda environment** (`conda list --export > environment_snapshot.txt`, saved in run directory)
 
 If any of these are missing, the experiment is not reproducible and cannot be cited in a publication.
 
+### Medical Physics Figure Set (Required for Training Experiments)
+
+Every training experiment must include these standard figures. Use the standard plot configuration for all figures.
+
+| # | Figure | What It Shows | Why It Matters |
+|---|--------|--------------|----------------|
+| 1 | **Training curves** | Loss and val MAE vs epoch | Training convergence and stability |
+| 2 | **Dose colorwash** | Predicted vs ground truth dose overlaid on CT (axial, coronal, sagittal) for representative case | Visual dose accuracy — what reviewers look at first |
+| 3 | **Dose difference map** | (Predicted - GT) overlaid on CT, with colorbar in Gy | Spatial pattern of errors |
+| 4 | **DVH comparison** | Predicted vs GT DVH curves for all structures, one representative case | Clinical metric accuracy — what clinicians evaluate |
+| 5 | **Gamma map** | 3%/3mm gamma index map overlaid on CT, with pass/fail coloring | Spatial distribution of pass/fail |
+| 6 | **Per-case box plots** | Box plot of MAE, Gamma, D95 error across all test cases | Distribution, not just means — shows outliers |
+| 7 | **Cross-experiment comparison** | Grouped bar or table comparing this experiment to all prior on MAE, Gamma, PTV D95 | Context — is this better or worse? |
+
+For multi-seed experiments, add:
+| 8 | **Seed variability** | Error bars or violin plots across seeds | Reproducibility of results |
+
+Optional but recommended:
+| 9 | **Dose profile** | 1D dose along a line through PTV center (predicted vs GT) | Penumbra accuracy, gradient realism |
+| 10 | **Loss component breakdown** | Individual loss terms vs epoch (for multi-component losses) | Which loss dominates, convergence balance |
+
 ### Publication Figure Standards
 
-All figures — whether in scripts, notebooks, or standalone — must meet these standards:
+All figures use a single standard configuration defined once and imported everywhere:
+
+```python
+# Standard plot configuration — use in ALL figure scripts and notebooks
+PLOT_CONFIG = {
+    'font.family': 'serif',
+    'font.size': 12,
+    'axes.labelsize': 14,
+    'axes.titlesize': 14,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 11,
+    'figure.dpi': 150,
+    'savefig.dpi': 300,
+    'savefig.bbox_inches': 'tight',
+    'savefig.pad_inches': 0.05,
+}
+
+# Standard colorblind-friendly palette (Wong 2011, Nature Methods)
+COLORS = {
+    'blue':    '#0072B2',
+    'orange':  '#E69F00',
+    'green':   '#009E73',
+    'red':     '#D55E00',
+    'purple':  '#CC79A7',
+    'cyan':    '#56B4E9',
+    'yellow':  '#F0E442',
+    'black':   '#000000',
+}
+
+# Standard experiment comparison order
+COLOR_ORDER = ['blue', 'orange', 'green', 'red', 'purple', 'cyan']
+```
 
 | Requirement | Standard |
 |-------------|----------|
 | Resolution | 300 DPI minimum |
-| Font | Serif family, 12pt minimum |
+| Font | Serif family, 12pt minimum (see config above) |
 | Format | Both PNG (raster) and PDF (vector) |
-| Colors | Colorblind-friendly palette |
+| Colors | Wong 2011 colorblind-friendly palette (see above) |
 | Axes | Labeled with units (e.g., "MAE (Gy)", "Epoch") |
 | Legends | Present and readable |
-| Captions | Required in notebooks — describe what is shown and what to conclude |
+| Captions | Required — what it shows, what to observe, clinical meaning, comparison to prior |
+| Error representation | Box plots (not bar charts) for distributions. 95% CI for summary statistics. |
+
+### EXPERIMENTS_INDEX.md Format
+
+The experiment index uses standardized metric columns for at-a-glance comparison:
+
+```markdown
+| Date | ID | Git Hash | Notebook | Model | MAE (Gy) | Gamma 3%/3mm | PTV70 D95 Gap | Status |
+```
+
+- **MAE**: Test set mean +/- std (Gy)
+- **Gamma**: Test set mean +/- std (%)
+- **PTV70 D95 Gap**: Mean predicted D95 minus GT D95 (Gy). Negative = underdose.
+- **Status**: `Pilot (v2.2.0)` for old data, `Complete` for v2.3+ data
 
 ### Experiment Output Structure
 
@@ -313,7 +381,8 @@ runs/<exp_name>/
 ├── version_*/                # PyTorch Lightning logs
 ├── training_config.json      # All hyperparameters
 ├── training_summary.json     # Final metrics
-└── metrics.csv               # Per-epoch metrics
+├── metrics.csv               # Per-epoch metrics
+└── environment_snapshot.txt  # conda list --export
 
 predictions/<exp_name>_test/
 ├── case_XXXX_pred.npz        # Per-case predictions
@@ -323,11 +392,12 @@ predictions/<exp_name>_test/
 ### What "Publishable" Means
 
 Every experiment notebook should be ready to drop into a journal supplementary section as-is. This means:
-- A reader unfamiliar with the project can understand what was done and why
-- All results are quantified with proper metrics, not just "it looks better"
-- Comparisons to prior experiments use consistent metrics and methodology
+- A reader unfamiliar with the project can understand what was done, why, and what changed from prior work
+- All results are quantified with proper metrics and statistics, not just "it looks better"
+- Comparisons to prior experiments use consistent metrics, the same standardized table format, and statistical tests
 - Limitations and failure modes are honestly documented
 - Figures tell a clear story without requiring external explanation
+- No placeholders, no `None` values, no `[UPDATE]` markers remain
 
 ## Current Project Status
 
