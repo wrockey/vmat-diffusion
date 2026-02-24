@@ -131,17 +131,17 @@ class VMATDosePatchDataset(Dataset):
         """Sample patch center, biased toward high-dose regions."""
         ps = self.patch_size
         half = ps // 2
-        
-        # Valid range for center
-        y_range = (half, dose.shape[0] - half)
-        x_range = (half, dose.shape[1] - half)
-        z_range = (half, dose.shape[2] - half)
-        
+
+        # Valid range for center — clamp when volume dim <= patch_size
+        y_range = (half, max(half + 1, dose.shape[0] - half))
+        x_range = (half, max(half + 1, dose.shape[1] - half))
+        z_range = (half, max(half + 1, dose.shape[2] - half))
+
         # 50% chance: sample from high-dose region
         if np.random.rand() < 0.5:
             high_dose_mask = dose > 0.1
             candidates = np.where(high_dose_mask)
-            
+
             if len(candidates[0]) > 0:
                 valid_mask = (
                     (candidates[0] >= y_range[0]) & (candidates[0] < y_range[1]) &
@@ -149,16 +149,16 @@ class VMATDosePatchDataset(Dataset):
                     (candidates[2] >= z_range[0]) & (candidates[2] < z_range[1])
                 )
                 valid_indices = np.where(valid_mask)[0]
-                
+
                 if len(valid_indices) > 0:
                     idx = np.random.choice(valid_indices)
                     return (candidates[0][idx], candidates[1][idx], candidates[2][idx])
-        
+
         # Random sampling
         y = np.random.randint(y_range[0], y_range[1])
         x = np.random.randint(x_range[0], x_range[1])
         z = np.random.randint(z_range[0], z_range[1])
-        
+
         return (y, x, z)
     
     def _extract_patch(
