@@ -235,10 +235,21 @@ Not all experiments are training runs. Use the appropriate template variant:
    ```
 2. **Record the exact git commit hash** — this is the only reliable way to reproduce results later. Without it, the experiment cannot be reproduced and has no scientific value.
 
+### Multi-Seed Protocol (AUTOMATIC — do not skip)
+
+**Every training experiment runs 3 seeds by default.** This is not optional. Single-seed results are not publishable and will not be accepted. Do this automatically without being asked.
+
+- **Seeds:** 42, 123, 456 (standard set — use these unless documented otherwise)
+- **Naming:** `<exp_name>_seed42`, `<exp_name>_seed123`, `<exp_name>_seed456`
+- **Reporting:** All metrics reported as **mean ± std** across seeds. Per-seed results also recorded.
+- **Statistical tests:** Paired comparisons use all 3 seeds × N test cases (3N paired observations)
+- **When to use fewer seeds:** Quick debugging or hyperparameter scouting runs may use 1 seed, but must be labeled `Status: Preliminary` in the experiment index and cannot be cited as results.
+- **When to use more seeds:** If std is large relative to the effect size (effect < 2× std), add seeds 789 and 1024 for a 5-seed run.
+
 ### During the Experiment
 
-3. **Run training** with appropriate CLI flags. All hyperparameters must be captured in the training config JSON that the scripts auto-save to `runs/<exp_name>/training_config.json`.
-4. **Run test-set inference and evaluation** when training completes. Record MAE, Gamma (3%/3mm), DVH metrics, and QUANTEC compliance.
+3. **Run training** for all 3 seeds. All hyperparameters must be captured in the training config JSON that the scripts auto-save to `runs/<exp_name>_seed*/training_config.json`.
+4. **Run test-set inference and evaluation** for each seed when training completes. Record MAE, Gamma (3%/3mm), DVH metrics, and QUANTEC compliance.
 
 ### Post-Experiment Documentation (ALL steps REQUIRED)
 
@@ -258,7 +269,7 @@ Not all experiments are training runs. Use the appropriate template variant:
      4. **Dataset** — Case count, train/val/test case IDs (not just counts), preprocessing version, data file checksums or batch_summary.json reference
      5. **Model & Training Configuration** — Architecture, loss functions, all hyperparameters
      6. **Results** — Required figures (see Medical Physics Figure Set below), each with caption and "Key observations" bullets
-     7. **Statistical Analysis** — For n>=10: confidence intervals (95% CI), effect sizes vs baseline. For multi-seed: mean +/- std across seeds. For comparisons: paired test (Wilcoxon signed-rank) with p-values. Box plots, not bar charts.
+     7. **Statistical Analysis** — Report mean ± std across 3 seeds. For n>=10 test cases: 95% CI. For comparisons vs baseline: paired Wilcoxon signed-rank with p-values (using all seed×case pairs). Box plots, not bar charts.
      8. **Cross-Experiment Comparison** — Table comparing this experiment to ALL prior experiments on the same standardized metrics. Same format every time.
      9. **Conclusions, Limitations, and Next Steps** — What worked, what didn't, what this motivates, honest limitations
      10. **Artifacts** — Table of file paths (checkpoints, configs, predictions, figures)
@@ -282,7 +293,7 @@ Not all experiments are training runs. Use the appropriate template variant:
 Every experiment must record:
 - **Git commit hash** of the exact code used
 - **Python version**, PyTorch version, CUDA version, GPU model
-- **Random seed** (use 42 unless documented otherwise)
+- **Random seeds** (42, 123, 456 — all three runs required for publishable results)
 - **Exact CLI command** to reproduce the run
 - **Data split** used (**actual case IDs** for train/val/test — not just counts)
 - **Preprocessing version** and reference to `batch_summary.json` (data provenance)
@@ -305,8 +316,7 @@ Every training experiment must include these standard figures. Use the standard 
 | 6 | **Per-case box plots** | Box plot of MAE, Gamma, D95 error across all test cases | Distribution, not just means — shows outliers |
 | 7 | **Cross-experiment comparison** | Grouped bar or table comparing this experiment to all prior on MAE, Gamma, PTV D95 | Context — is this better or worse? |
 
-For multi-seed experiments, add:
-| 8 | **Seed variability** | Error bars or violin plots across seeds | Reproducibility of results |
+| 8 | **Seed variability** | Error bars or violin plots across 3 seeds | Reproducibility — required for all training experiments |
 
 Optional but recommended:
 | 9 | **Dose profile** | 1D dose along a line through PTV center (predicted vs GT) | Penumbra accuracy, gradient realism |
@@ -375,18 +385,23 @@ The experiment index uses standardized metric columns for at-a-glance comparison
 ### Experiment Output Structure
 
 ```
-runs/<exp_name>/
+runs/<exp_name>_seed42/       # Seed 1 (repeat for seed123, seed456)
 ├── checkpoints/              # Model checkpoints (best + last)
-├── figures/                  # Publication-ready figures (PNG + PDF)
 ├── version_*/                # PyTorch Lightning logs
 ├── training_config.json      # All hyperparameters
 ├── training_summary.json     # Final metrics
 ├── metrics.csv               # Per-epoch metrics
 └── environment_snapshot.txt  # conda list --export
 
-predictions/<exp_name>_test/
-├── case_XXXX_pred.npz        # Per-case predictions
-└── evaluation_results.json   # Aggregate test metrics
+runs/<exp_name>/              # Aggregate (created by figure script)
+└── figures/                  # Publication-ready figures (PNG + PDF)
+
+predictions/<exp_name>_seed42_test/   # Per-seed predictions
+├── case_XXXX_pred.npz
+└── evaluation_results.json
+
+predictions/<exp_name>_aggregate/     # Cross-seed summary
+└── aggregate_results.json    # Mean ± std across seeds
 ```
 
 ### What "Publishable" Means
