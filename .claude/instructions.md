@@ -421,6 +421,8 @@ Key decisions with rationale. Full decision records are closed GitHub Issues wit
 
 | Date | Decision | GitHub Issue |
 |------|----------|-------------|
+| 2026-02-23 | SIB-only dataset: exclude single-Rx cases, train on ~161 SIB plans from 2 institutions | #39 |
+| 2026-02-23 | Pre-registered analysis plan: 10 ablation conditions × 3 seeds, locked stratified split | See Analysis Plan |
 | 2026-02-17 | Paper framing: "Loss-function engineering for clinically acceptable prostate VMAT dose prediction" | #24 (closed) |
 | 2026-02-17 | Add physician preference ranking to Phase 1 eval framework | #10 |
 | 2026-02-17 | Publication target: Medical Physics, single comprehensive paper | #28 (closed) |
@@ -460,8 +462,9 @@ Reverse chronological. **One line per session** — just enough to orient the ne
 
 Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
-- **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup (#30 dup removed, #2/#3 In Progress, backburner milestones fixed). Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup of #4, #35 #36 created.
-- **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. No code changes. Issues: #29-34.
+- **2026-02-23** — Project foundation overhaul: pre-registered analysis plan, 2-institution study design (~161 SIB cases), augmentation (rotation+noise), experiment protocol rewrite (multi-seed, standard figures, stats). Flagged all pilot metrics as invalid. Commits: `1f64172`..`75dde9a`. Issues: #27 reopened (DDPM provisional), #37-47 created, #42 #44 closed.
+- **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup. Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup, #35 #36 created.
+- **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. Issues: #29-34.
 
 **Board views still needed (manual, web UI):**
 - "By Phase" table view grouped by Phase field
@@ -487,6 +490,14 @@ Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 | CUDA | 12.6 (driver 560.94) |
 | GPU | NVIDIA RTX 3090 (24 GB) |
 
+### Argon HPC (Available for Phase 2 scaling)
+
+| Setting | Value |
+|---------|-------|
+| Cluster | Argon HPC |
+| Use case | Phase 2 parallel training if >2 weeks on local RTX 3090 (#46) |
+| Status | Available, environment not yet set up |
+
 ### Home Machine (Pilot — archived)
 
 | Setting | Value |
@@ -508,4 +519,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-23 (Preprocessing pipeline v2.3.0 — crop instead of resample, fixes D95 artifact. Updated all downstream scripts for metadata-based spacing.)*
+*Last updated: 2026-02-23 (Project foundation overhaul — pre-registered analysis plan, 2-institution SIB-only design, enhanced augmentation, experiment protocol rewrite, pilot metrics invalidated.)*
