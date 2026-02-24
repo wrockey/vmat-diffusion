@@ -50,7 +50,7 @@ def predict_single_case(
     model: BaselineDosePredictor,
     npz_path: str,
     patch_size: int = 128,
-    overlap: int = 32,
+    overlap: int = 64,
     device: str = 'cuda',
 ):
     """Predict dose for a single case using sliding window."""
@@ -133,7 +133,7 @@ def main():
     parser.add_argument('--output_dir', type=str, default=None, help='Output directory')
     parser.add_argument('--compute_metrics', action='store_true')
     parser.add_argument('--patch_size', type=int, default=128)
-    parser.add_argument('--overlap', type=int, default=32)
+    parser.add_argument('--overlap', type=int, default=64)
     parser.add_argument('--gamma_subsample', type=int, default=2)
     parser.add_argument('--rx_dose_gy', type=float, default=70.0)
     parser.add_argument('--device', type=str, default='cuda')

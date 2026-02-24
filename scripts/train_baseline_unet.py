@@ -1447,7 +1447,7 @@ class BaselineDosePredictor(pl.LightningModule):
         condition: torch.Tensor,
         constraints: torch.Tensor,
         patch_size: int = 128,
-        overlap: int = 32,
+        overlap: int = 64,
         verbose: bool = False,
     ) -> torch.Tensor:
         """

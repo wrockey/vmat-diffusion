@@ -60,7 +60,7 @@ def predict_single_case(
     ddim_steps: int = 50,
     device: str = 'cuda',
     patch_size: int = 128,
-    overlap: int = 32,
+    overlap: int = 64,
 ) -> Tuple[np.ndarray, float]:
     """
     Run inference on a single case and return prediction + inference time.

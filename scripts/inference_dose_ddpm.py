@@ -87,7 +87,7 @@ def predict_single_case(
     model: DoseDDPM,
     npz_path: str,
     patch_size: int = 128,
-    overlap: int = 32,
+    overlap: int = 64,
     ddim_steps: int = 50,
     device: str = 'cuda',
 ) -> Tuple[np.ndarray, Dict]:
@@ -198,7 +198,7 @@ def main():
     
     # Inference settings
     parser.add_argument('--patch_size', type=int, default=128)
-    parser.add_argument('--overlap', type=int, default=32)
+    parser.add_argument('--overlap', type=int, default=64)
     parser.add_argument('--ddim_steps', type=int, default=50,
                        help='DDIM sampling steps (more = slower but better)')
     

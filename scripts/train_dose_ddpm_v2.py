@@ -1032,7 +1032,7 @@ class DoseDDPM(pl.LightningModule):
         condition: torch.Tensor,
         constraints: torch.Tensor,
         patch_size: int = 128,
-        overlap: int = 32,
+        overlap: int = 64,
         ddim_steps: int = 50,
         verbose: bool = True,
     ) -> torch.Tensor:
