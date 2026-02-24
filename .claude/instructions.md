@@ -179,7 +179,7 @@ All components already implemented in prior experiments — need to combine with
 
 ---
 
-## CURRENT STATE (as of 2026-02-23)
+## CURRENT STATE (as of 2026-02-24)
 
 ### Current Phase: Phase 0 (Setup) — Data collection in progress
 
@@ -187,12 +187,13 @@ All components already implemented in prior experiments — need to combine with
 - Institution A: 76 cases collected, 74 processed (11 SIB, 63 single-Rx). Multiple planners.
 - Institution B: ~150 cases expected (all SIB with PTV70 + PTV56). Single planner.
 - **Projected usable: ~161 SIB cases** from 2 institutions (after applying inclusion criteria)
-- **IRB: Approved**
+- **IRB: Approved** (#42 CLOSED)
 - **Compute: RTX 3090 (local), Argon HPC (available for Phase 2 scaling)**
 
 **Completed:**
 - #1 WSL dev environment (CLOSED)
 - #4 D95 pipeline artifact fix (CLOSED — verified on 74 cases, all D95 >= 66.3 Gy)
+- #42 IRB approval documented (CLOSED)
 
 **In progress:**
 - #2 Collect and anonymize remaining ~150 Institution B cases
@@ -236,10 +237,11 @@ The pilot phase (23 cases, single institution, v2.2.0 data) is complete. It vali
 - DDPM conclusion (#27) — downgraded to PROVISIONAL (n=23, corrupted data)
 - The "D95 gap" numbers — dominated by the preprocessing artifact, not model error
 
-### Phase 2 Utilities (added 2026-02-17)
+### Phase 2 Utilities
 
 - `scripts/uncertainty_loss.py` — UncertaintyWeightedLoss module (Kendall et al. 2018). Ready to import; replaces manual loss weight tuning.
 - `scripts/calibrate_loss_normalization.py` — Loss calibration script. Has stub loss functions — see GitHub issue #11 for replacing with real implementations.
+- `scripts/architectures.py` — Architecture variants (AttentionUNet3D, BottleneckAttnUNet3D) + registry/factory. Added 2026-02-24 for C11-C16.
 
 ---
 
@@ -254,26 +256,32 @@ Detailed tasks for each phase are tracked as **GitHub Issues** with phase labels
 Key items (see GitHub Issues with `phase/0-setup` label):
 - ~~WSL environment setup~~ (#1 DONE)
 - ~~Fix D95 pipeline artifact~~ (#4 DONE)
+- ~~Document IRB approval~~ (#42 DONE)
 - Collect and anonymize ~220 DICOM-RT cases (#2 — in progress)
 - Preprocess all cases with v2.3 pipeline (#3 — in progress, 74/76 done)
 - Define inclusion/exclusion criteria (#39)
 - Lock dataset and version NPZ files (#40)
 - Define locked stratified test set (#38)
-- Document IRB approval (#42)
+- Document data provenance and ethics (#5)
 
 ### Phase 1: Clinical Evaluation Framework — Milestone: `Phase 1: Evaluation Framework`
 
 **Goal:** Define what "good" means, establish baseline, validate pipeline end-to-end.
 
 Key items (see GitHub Issues with `phase/1-eval` label):
+- ~~Per-structure DVH compliance evaluation~~ (#6 DONE)
+- ~~PTV-region Gamma at multiple thresholds~~ (#7 DONE)
+- ~~Implement enhanced data augmentation~~ (#44 DONE)
+- ~~Baseline v2.3 seed 42 preliminary results~~ (#48 DONE)
+- ~~Investigate Femur L/R asymmetry~~ (#51 DONE)
+- **Run baseline U-Net on v2.3 data** (#37 — in progress, seed 42 done)
 - **Literature review** (#41) — establish benchmarks from published prostate dose prediction papers
-- **Run baseline U-Net on v2.3 data** (#37) — validates pipeline, establishes new baseline
-- Implement enhanced data augmentation (#44)
-- Per-structure DVH compliance evaluation (#6)
-- PTV-region Gamma at multiple thresholds (#7)
+- Fix sliding window inference coverage gap (#50)
 - Dose gradient/falloff analysis (#8)
 - Single-case clinical acceptability report (#9)
 - Physician preference ranking study (#10 — plan early, execute after Phase 2)
+- Augmentation ablation (#45)
+- Estimate training time on full dataset (#46)
 
 ### Phase 2: Ablation Study — Milestone: `Phase 2: Combined Loss`
 
@@ -283,8 +291,10 @@ Key items (see GitHub Issues with `phase/1-eval` label):
 
 Key items (see GitHub Issues with `phase/2-combined` label):
 - Loss calibration (#11) and uncertainty weighting (#12, #13)
-- Ablation study design (#43) — 10 conditions × 3 seeds = 30 runs
-- Run experiments (#14) — RTX 3090 or Argon HPC
+- Ablation study design (#43 — in progress, amended with architecture conditions)
+- Run loss ablation experiments C1-C10 (#14) — RTX 3090 or Argon HPC
+- Run architecture comparison experiments C11-C16 (#53)
+- Address OAR Dmax hotspot violations (#52)
 
 ### Phase 3: Iterate & Publish — Milestone: `Phase 3: Iterate & Publish`
 
@@ -293,7 +303,8 @@ Key items (see GitHub Issues with `phase/2-combined` label):
 Key items (see GitHub Issues with `phase/3-iterate` label):
 - Analyze Phase 2 results → determine next direction (#15)
 - Failure case report (bottom 10%) (#16)
-- Cross-institutional validation analysis
+- Leave-one-planner-out analysis (#47)
+- Re-evaluate DDPM if Phase 2 plateaus (#49)
 - Code release preparation (#17)
 - Medical Physics manuscript (#18)
 
@@ -497,6 +508,7 @@ Reverse chronological. **One line per session** — just enough to orient the ne
 
 Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
+- **2026-02-24** — Architecture variants for Phase 2 ablation: `scripts/architectures.py` (AttentionUNet3D, BottleneckAttnUNet3D), `--architecture` flag, pre-registered plan amended (C11-C16), GitHub board synced (20 issues added). Commits: `6fe5f89`, `83eee8b`. Issues: #53 created, #21 #43 #14 updated.
 - **2026-02-23** — Centralized evaluation framework: 4 new modules (`eval_core`, `eval_clinical`, `eval_metrics`, `eval_statistics`), migrated 7 scripts, fixed D95/gamma/Bowel-V45/Dmax bugs, corrected stats methodology (per-case Wilcoxon, Holm-Bonferroni). Commit: `722551b`. Issues: #6 #7 closed, #9 #37 updated. Pre-registered analysis plan amended (stats corrections).
 - **2026-02-23** — Project foundation overhaul: pre-registered analysis plan, 2-institution study design (~161 SIB cases), augmentation (rotation+noise), experiment protocol rewrite (multi-seed, standard figures, stats). Flagged all pilot metrics as invalid. Commits: `1f64172`..`75dde9a`. Issues: #27 reopened (DDPM provisional), #37-47 created, #42 #44 closed.
 - **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup. Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup, #35 #36 created.
@@ -555,4 +567,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-23 (Centralized evaluation framework — 4 modules, 7 migrations, critical bug fixes, stats methodology corrected, pre-registered plan amended.)*
+*Last updated: 2026-02-24 (Architecture variants for Phase 2 ablation, GitHub board synced, roadmap reconciled.)*
