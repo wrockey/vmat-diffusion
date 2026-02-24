@@ -1057,27 +1057,28 @@ class DoseDDPM(pl.LightningModule):
         
         # Stride between patches
         stride = patch_size - overlap
-        
-        # Calculate number of patches in each dimension
-        n_patches_h = max(1, (H - patch_size) // stride + 1)
-        n_patches_w = max(1, (W - patch_size) // stride + 1)
-        n_patches_d = max(1, (D - patch_size) // stride + 1)
-        
-        # Handle edge cases where volume is smaller than patch
-        if H <= patch_size:
-            n_patches_h = 1
-        if W <= patch_size:
-            n_patches_w = 1
-        if D <= patch_size:
-            n_patches_d = 1
-        
-        total_patches = n_patches_h * n_patches_w * n_patches_d
-        
+
+        def _axis_positions(length: int) -> list:
+            """Generate start positions along one axis ensuring full coverage."""
+            if length <= patch_size:
+                return [0]
+            starts = list(range(0, length - patch_size + 1, stride))
+            # Ensure the last position covers the volume end
+            if starts[-1] + patch_size < length:
+                starts.append(length - patch_size)
+            return starts
+
+        h_positions = _axis_positions(H)
+        w_positions = _axis_positions(W)
+        d_positions = _axis_positions(D)
+
+        total_patches = len(h_positions) * len(w_positions) * len(d_positions)
+
         if verbose:
             print(f"Sliding window inference:")
             print(f"  Volume: {H}x{W}x{D}")
             print(f"  Patch size: {patch_size}, Overlap: {overlap}, Stride: {stride}")
-            print(f"  Grid: {n_patches_h}x{n_patches_w}x{n_patches_d} = {total_patches} patches")
+            print(f"  Grid: {len(h_positions)}x{len(w_positions)}x{len(d_positions)} = {total_patches} patches")
         
         # Create Gaussian weight kernel for blending
         weight_kernel = self._create_gaussian_kernel(patch_size, sigma=patch_size/4)
@@ -1088,14 +1089,9 @@ class DoseDDPM(pl.LightningModule):
         weight_sum = torch.zeros((1, 1, H, W, D), device=device)
         
         patch_idx = 0
-        for i in range(n_patches_h):
-            for j in range(n_patches_w):
-                for k in range(n_patches_d):
-                    # Calculate patch coordinates
-                    h_start = min(i * stride, H - patch_size)
-                    w_start = min(j * stride, W - patch_size)
-                    d_start = min(k * stride, D - patch_size)
-                    
+        for h_start in h_positions:
+            for w_start in w_positions:
+                for d_start in d_positions:
                     h_end = h_start + patch_size
                     w_end = w_start + patch_size
                     d_end = d_start + patch_size
