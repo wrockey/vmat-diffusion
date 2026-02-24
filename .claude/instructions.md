@@ -381,11 +381,14 @@ Ideas to revisit only if the above plateaus. See GitHub for full list.
 
 ### Statistical Analysis
 
-1. **Per-condition summary:** mean ± std across 3 seeds, with 95% CI
-2. **Pairwise comparison vs baseline:** Wilcoxon signed-rank test on all seed×case paired observations (3 seeds × ~16 test cases = ~48 pairs per comparison)
-3. **Multiple comparison correction:** Bonferroni (9 comparisons vs baseline → significance at p < 0.0056)
-4. **Effect size:** Cohen's d for each comparison
-5. **Ablation analysis:** Full combined vs each remove-one variant (4 paired tests, Bonferroni-corrected)
+> **Amendment (2026-02-23, pre-results):** Corrected seed-case independence violation and upgraded multiple comparison method. Rationale: seed×case pairs are NOT independent (same case across seeds shares anatomy); pooling them inflates sample size. Holm-Bonferroni is uniformly more powerful than Bonferroni with the same FWER guarantee. These are methodological corrections made before any v2.3 results were observed.
+
+1. **Per-condition summary:** mean ± std across 3 seeds (averaged per-case first), with 95% bootstrap CI (case-level resampling, n=~16)
+2. **Pairwise comparison vs baseline:** Wilcoxon signed-rank test on per-case means (average across seeds per case first → n=~16 independent paired observations per comparison). NOT pooled seed×case pairs.
+3. **Multiple comparison correction:** Holm-Bonferroni step-down (9 comparisons vs baseline). More powerful than Bonferroni, same FWER guarantee.
+4. **Effect size:** Cohen's d (paired) for each comparison
+5. **Ablation analysis:** Full combined vs each remove-one variant (4 paired tests, Holm-Bonferroni-corrected)
+6. **Power note:** With n=~16 and Holm-Bonferroni, the study has limited power for small effects. If effect size < 2× std, consider 5-seed runs (seeds 42, 123, 456, 789, 1024).
 
 ### Cross-Institutional Validation
 
@@ -462,6 +465,7 @@ Reverse chronological. **One line per session** — just enough to orient the ne
 
 Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
+- **2026-02-23** — Centralized evaluation framework: 4 new modules (`eval_core`, `eval_clinical`, `eval_metrics`, `eval_statistics`), migrated 7 scripts, fixed D95/gamma/Bowel-V45/Dmax bugs, corrected stats methodology (per-case Wilcoxon, Holm-Bonferroni). Issues: #6 #7 closed. Pre-registered analysis plan amended (stats corrections).
 - **2026-02-23** — Project foundation overhaul: pre-registered analysis plan, 2-institution study design (~161 SIB cases), augmentation (rotation+noise), experiment protocol rewrite (multi-seed, standard figures, stats). Flagged all pilot metrics as invalid. Commits: `1f64172`..`75dde9a`. Issues: #27 reopened (DDPM provisional), #37-47 created, #42 #44 closed.
 - **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup. Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup, #35 #36 created.
 - **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. Issues: #29-34.
@@ -519,4 +523,4 @@ Detailed troubleshooting for GPU stability, watchdog, training hangs: see `docs/
 
 ---
 
-*Last updated: 2026-02-23 (Project foundation overhaul — pre-registered analysis plan, 2-institution SIB-only design, enhanced augmentation, experiment protocol rewrite, pilot metrics invalidated.)*
+*Last updated: 2026-02-23 (Centralized evaluation framework — 4 modules, 7 migrations, critical bug fixes, stats methodology corrected, pre-registered plan amended.)*

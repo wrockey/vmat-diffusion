@@ -22,16 +22,12 @@ import torch
 from tqdm import tqdm
 
 # Import baseline model
-from train_baseline_unet import BaselineDosePredictor, DEFAULT_SPACING_MM, get_spacing_from_metadata
+from train_baseline_unet import BaselineDosePredictor
 
-# Import evaluation functions from diffusion inference script
-from inference_dose_ddpm import (
-    compute_dose_metrics,
-    compute_gamma,
-    compute_dvh_metrics,
-    check_clinical_constraints,
-    HAS_PYMEDPHYS,
-)
+# Import centralized evaluation framework
+from eval_core import DEFAULT_SPACING_MM, get_spacing_from_metadata, STRUCTURE_CHANNELS
+from eval_metrics import evaluate_case, HAS_PYMEDPHYS
+from eval_statistics import NumpyEncoder
 
 
 def load_model(checkpoint_path: str, device: str = 'cuda') -> BaselineDosePredictor:
@@ -97,47 +93,30 @@ def evaluate_single_case(
     compute_gamma_metric: bool = True,
     gamma_subsample: int = 2,
 ) -> Dict:
-    """Evaluate prediction against ground truth."""
+    """Evaluate prediction against ground truth using centralized framework."""
     data = np.load(npz_path, allow_pickle=True)
     target = data['dose']
     masks = data['masks']
 
-    # Read spacing from metadata
     metadata = data['metadata'].item() if 'metadata' in data.files else {}
     spacing = get_spacing_from_metadata(metadata)
 
-    structure_names = {
-        0: 'PTV70', 1: 'PTV56', 2: 'Prostate', 3: 'Rectum',
-        4: 'Bladder', 5: 'Femur_L', 6: 'Femur_R', 7: 'Bowel'
-    }
+    print("  Computing evaluation metrics...")
+    result = evaluate_case(
+        pred_normalized=pred,
+        target_normalized=target,
+        masks=masks,
+        spacing_mm=spacing,
+        case_id=Path(npz_path).stem,
+        rx_dose_gy=rx_dose_gy,
+        compute_gamma_metric=compute_gamma_metric,
+        gamma_subsample=gamma_subsample,
+    )
 
-    results = {
-        'case_id': Path(npz_path).stem,
-        'model_type': 'baseline_unet',
-        'timestamp': datetime.now().isoformat(),
-        'spacing_mm': spacing,
-    }
-
-    # Dose metrics
-    print("  Computing dose metrics...")
-    results['dose_metrics'] = compute_dose_metrics(pred, target, rx_dose_gy)
-
-    # Gamma
-    if compute_gamma_metric and HAS_PYMEDPHYS:
-        print("  Computing gamma...")
-        pred_gy = pred * rx_dose_gy
-        target_gy = target * rx_dose_gy
-        results['gamma'] = compute_gamma(pred_gy, target_gy, spacing_mm=spacing, subsample=gamma_subsample)
-
-    # DVH metrics
-    print("  Computing DVH metrics...")
-    results['dvh_metrics'] = compute_dvh_metrics(pred, target, masks, structure_names, rx_dose_gy, spacing_mm=spacing)
-
-    # Clinical constraints
-    print("  Checking clinical constraints...")
-    results['clinical_constraints'] = check_clinical_constraints(results['dvh_metrics'])
-
-    return results
+    result_dict = result.to_dict()
+    result_dict['model_type'] = 'baseline_unet'
+    result_dict['timestamp'] = datetime.now().isoformat()
+    return result_dict
 
 
 def main():
@@ -211,17 +190,21 @@ def main():
             # Print summary
             dm = results['dose_metrics']
             print(f"  MAE: {dm['mae_gy']:.2f} Gy")
-            if 'gamma' in results and results['gamma'].get('gamma_pass_rate'):
-                print(f"  Gamma: {results['gamma']['gamma_pass_rate']:.1f}%")
-    
+            gamma_global = results.get('gamma', {}).get('global_3mm3pct', {})
+            if gamma_global.get('gamma_pass_rate') is not None:
+                print(f"  Gamma: {gamma_global['gamma_pass_rate']:.1f}%")
+
     # Save aggregate results
     if args.compute_metrics and all_results and output_dir:
         results_path = output_dir / 'baseline_evaluation_results.json'
-        
+
         mae_values = [r['dose_metrics']['mae_gy'] for r in all_results]
-        gamma_values = [r['gamma']['gamma_pass_rate'] for r in all_results
-                       if 'gamma' in r and r['gamma'].get('gamma_pass_rate')]
-        
+        gamma_values = [
+            r['gamma']['global_3mm3pct']['gamma_pass_rate']
+            for r in all_results
+            if r.get('gamma', {}).get('global_3mm3pct', {}).get('gamma_pass_rate') is not None
+        ]
+
         summary = {
             'model_type': 'baseline_unet',
             'n_cases': len(all_results),
@@ -232,21 +215,21 @@ def main():
             },
             'per_case_results': all_results,
         }
-        
+
         if gamma_values:
             summary['aggregate_metrics']['gamma_pass_rate_mean'] = float(np.mean(gamma_values))
             summary['aggregate_metrics']['gamma_pass_rate_std'] = float(np.std(gamma_values))
-        
+
         with open(results_path, 'w') as f:
-            json.dump(summary, f, indent=2)
-        
+            json.dump(summary, f, indent=2, cls=NumpyEncoder)
+
         print(f"\n{'='*60}")
         print("BASELINE EVALUATION SUMMARY")
         print('='*60)
         print(f"Cases evaluated: {len(all_results)}")
-        print(f"MAE: {summary['aggregate_metrics']['mae_gy_mean']:.2f} ± {summary['aggregate_metrics']['mae_gy_std']:.2f} Gy")
+        print(f"MAE: {summary['aggregate_metrics']['mae_gy_mean']:.2f} +/- {summary['aggregate_metrics']['mae_gy_std']:.2f} Gy")
         if gamma_values:
-            print(f"Gamma: {summary['aggregate_metrics']['gamma_pass_rate_mean']:.1f} ± {summary['aggregate_metrics']['gamma_pass_rate_std']:.1f}%")
+            print(f"Gamma: {summary['aggregate_metrics']['gamma_pass_rate_mean']:.1f} +/- {summary['aggregate_metrics']['gamma_pass_rate_std']:.1f}%")
         print(f"\nResults saved to: {results_path}")
 
 

@@ -34,58 +34,10 @@ import torch.nn.functional as F
 # Add scripts to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset, DEFAULT_SPACING_MM, get_spacing_from_metadata
+from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset
 
-# Optional pymedphys for gamma
-try:
-    from pymedphys import gamma as pymedphys_gamma
-    HAS_PYMEDPHYS = True
-except ImportError:
-    HAS_PYMEDPHYS = False
-    print("Warning: pymedphys not installed. Gamma metrics will be skipped.")
-
-
-def compute_gamma(
-    pred: np.ndarray,
-    target: np.ndarray,
-    spacing_mm: Tuple[float, ...] = DEFAULT_SPACING_MM,
-    subsample: int = 4,
-) -> Dict[str, float]:
-    """Compute gamma pass rate (3%/3mm) on subsampled volume."""
-    if not HAS_PYMEDPHYS:
-        return {'gamma_pass_rate': None, 'error': 'pymedphys not installed'}
-
-    # Subsample for speed
-    pred_sub = pred[::subsample, ::subsample, ::subsample]
-    target_sub = target[::subsample, ::subsample, ::subsample]
-    spacing_sub = tuple(s * subsample for s in spacing_mm)
-
-    # Create coordinate axes
-    axes = tuple(
-        np.arange(s) * sp for s, sp in zip(pred_sub.shape, spacing_sub)
-    )
-
-    try:
-        gamma_map = pymedphys_gamma(
-            axes_reference=axes,
-            dose_reference=target_sub,
-            axes_evaluation=axes,
-            dose_evaluation=pred_sub,
-            dose_percent_threshold=3.0,
-            distance_mm_threshold=3.0,
-            lower_percent_dose_cutoff=10.0,
-        )
-
-        valid = np.isfinite(gamma_map)
-        if not valid.any():
-            return {'gamma_pass_rate': 0.0}
-
-        return {
-            'gamma_pass_rate': float(np.mean(gamma_map[valid] <= 1.0) * 100),
-            'gamma_mean': float(np.mean(gamma_map[valid])),
-        }
-    except Exception as e:
-        return {'gamma_pass_rate': None, 'error': str(e)}
+from eval_core import DEFAULT_SPACING_MM, get_spacing_from_metadata
+from eval_metrics import compute_gamma, HAS_PYMEDPHYS
 
 
 def load_model(checkpoint_path: str, device: str = 'cuda') -> DoseDDPM:
@@ -176,7 +128,7 @@ def evaluate_prediction(
     }
 
     # Gamma pass rate
-    gamma_result = compute_gamma(pred_gy, target_gy, spacing_mm=spacing)
+    gamma_result = compute_gamma(pred_gy, target_gy, spacing_mm=spacing, subsample=4)
     metrics.update({f'gamma_{k}': v for k, v in gamma_result.items()})
 
     return metrics

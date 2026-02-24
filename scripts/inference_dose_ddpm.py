@@ -39,401 +39,29 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 # Import model from training script
-from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset, DEFAULT_SPACING_MM
+from train_dose_ddpm_v2 import DoseDDPM, VMATDoseFullVolumeDataset
+
+# Import centralized evaluation framework
+from eval_core import (
+    STRUCTURE_CHANNELS,
+    DEFAULT_SPACING_MM,
+    get_spacing_from_metadata,
+    denormalize_dose,
+)
+from eval_metrics import (
+    compute_dose_metrics,
+    compute_gamma,
+    compute_dvh_metrics,
+    evaluate_case,
+    HAS_PYMEDPHYS,
+)
+from eval_clinical import check_clinical_constraints, CLINICAL_CONSTRAINTS
+from eval_statistics import NumpyEncoder
 
 
-def get_spacing_from_metadata(metadata):
-    """
-    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
-
-    Fallback chain:
-        1. voxel_spacing_mm (v2.3+ native spacing)
-        2. target_spacing_mm (v2.2 resampled spacing)
-        3. DEFAULT_SPACING_MM
-    """
-    import numpy as np
-    if isinstance(metadata, np.ndarray):
-        metadata = metadata.item()
-
-    if 'voxel_spacing_mm' in metadata:
-        spacing = metadata['voxel_spacing_mm']
-        return tuple(float(s) for s in spacing)
-
-    if 'target_spacing_mm' in metadata:
-        spacing = metadata['target_spacing_mm']
-        return tuple(float(s) for s in spacing)
-
-    return DEFAULT_SPACING_MM
-
-# Optional: pymedphys for gamma
-try:
-    from pymedphys import gamma as pymedphys_gamma
-    HAS_PYMEDPHYS = True
-except ImportError:
-    HAS_PYMEDPHYS = False
-    print("Warning: pymedphys not installed. Gamma evaluation disabled.")
-
-
-# =============================================================================
-# Clinical Constraints (QUANTEC-based for Prostate VMAT)
-# =============================================================================
-
-# These are typical clinical constraints for prostate VMAT with SIB (70/56 Gy)
-# Based on QUANTEC guidelines and common clinical practice
-# Users should adjust these based on their institutional protocols
-
-CLINICAL_CONSTRAINTS = {
-    # PTV constraints (targets)
-    'PTV70': {
-        'D95_min': 66.5,    # 95% of Rx (Gy) - minimum acceptable
-        'D95_target': 70.0,  # Ideal D95
-        'V95_min': 95.0,     # % volume receiving 95% of Rx
-        'description': 'High-dose PTV (70 Gy target)',
-    },
-    'PTV56': {
-        'D95_min': 53.2,    # 95% of Rx (Gy)
-        'V95_min': 95.0,
-        'description': 'Intermediate PTV (56 Gy target)',
-    },
-    
-    # OAR constraints (organs at risk)
-    'Rectum': {
-        'V70_max': 15.0,    # % volume receiving >= 70 Gy
-        'V60_max': 25.0,    # % volume receiving >= 60 Gy
-        'V50_max': 50.0,    # % volume receiving >= 50 Gy
-        'Dmax_max': 75.0,   # Maximum dose (Gy)
-        'description': 'Rectum - critical OAR',
-    },
-    'Bladder': {
-        'V70_max': 25.0,
-        'V60_max': 35.0,
-        'V50_max': 50.0,
-        'Dmax_max': 75.0,
-        'description': 'Bladder - critical OAR',
-    },
-    'Femur_L': {
-        'Dmax_max': 50.0,   # Maximum dose to femoral head
-        'V50_max': 5.0,     # Very little volume above 50 Gy
-        'description': 'Left femoral head',
-    },
-    'Femur_R': {
-        'Dmax_max': 50.0,
-        'V50_max': 5.0,
-        'description': 'Right femoral head',
-    },
-    'Bowel': {
-        'Dmax_max': 52.0,
-        'V45_max': 195.0,   # cc, but we'll check % for simplicity
-        'description': 'Bowel bag',
-    },
-}
-
-
-def check_clinical_constraints(
-    dvh_metrics: Dict[str, Dict[str, float]],
-    constraints: Dict = CLINICAL_CONSTRAINTS,
-) -> Dict[str, Dict]:
-    """
-    Check if predicted DVH metrics meet clinical constraints.
-    
-    Args:
-        dvh_metrics: DVH metrics from compute_dvh_metrics()
-        constraints: Clinical constraint dictionary
-    
-    Returns:
-        Dict with pass/fail status and details for each structure
-    """
-    results = {
-        'overall_pass': True,
-        'structures': {},
-        'violations': [],
-        'summary': {
-            'total_constraints': 0,
-            'passed': 0,
-            'failed': 0,
-        }
-    }
-    
-    for structure, struct_constraints in constraints.items():
-        if structure not in dvh_metrics:
-            continue
-        
-        metrics = dvh_metrics[structure]
-        if not metrics.get('exists', False):
-            continue
-        
-        struct_results = {
-            'description': struct_constraints.get('description', ''),
-            'constraints_checked': [],
-            'passed': True,
-        }
-        
-        # Check each constraint for this structure
-        for constraint_name, limit in struct_constraints.items():
-            if constraint_name == 'description':
-                continue
-            
-            results['summary']['total_constraints'] += 1
-            
-            # Parse constraint type
-            if constraint_name.startswith('D') and '_min' in constraint_name:
-                # Minimum Dx constraint (for targets)
-                metric_name = constraint_name.replace('_min', '').replace('_target', '')
-                pred_key = f'pred_{metric_name}'
-                if pred_key in metrics:
-                    pred_value = metrics[pred_key]
-                    passed = pred_value >= limit
-                    constraint_type = 'min'
-                else:
-                    continue
-                    
-            elif constraint_name.startswith('D') and '_max' in constraint_name:
-                # Maximum Dx constraint
-                metric_name = constraint_name.replace('_max', '')
-                if metric_name == 'Dmax':
-                    pred_value = metrics.get('pred_max_gy', 0)
-                else:
-                    pred_key = f'pred_{metric_name}'
-                    pred_value = metrics.get(pred_key, 0)
-                passed = pred_value <= limit
-                constraint_type = 'max'
-                
-            elif constraint_name.startswith('V') and '_max' in constraint_name:
-                # Maximum Vx constraint (for OARs)
-                metric_name = constraint_name.replace('_max', '')
-                pred_key = f'pred_{metric_name}'
-                if pred_key in metrics:
-                    pred_value = metrics[pred_key]
-                    passed = pred_value <= limit
-                    constraint_type = 'max'
-                else:
-                    continue
-                    
-            elif constraint_name.startswith('V') and '_min' in constraint_name:
-                # Minimum Vx constraint (for targets)
-                metric_name = constraint_name.replace('_min', '')
-                pred_key = f'pred_{metric_name}'
-                if pred_key in metrics:
-                    pred_value = metrics[pred_key]
-                    passed = pred_value >= limit
-                    constraint_type = 'min'
-                else:
-                    continue
-            else:
-                continue
-            
-            # Record result
-            constraint_result = {
-                'constraint': constraint_name,
-                'limit': limit,
-                'predicted': round(pred_value, 2),
-                'passed': passed,
-                'type': constraint_type,
-            }
-            struct_results['constraints_checked'].append(constraint_result)
-            
-            if passed:
-                results['summary']['passed'] += 1
-            else:
-                results['summary']['failed'] += 1
-                struct_results['passed'] = False
-                results['overall_pass'] = False
-                results['violations'].append({
-                    'structure': structure,
-                    'constraint': constraint_name,
-                    'limit': limit,
-                    'predicted': round(pred_value, 2),
-                    'type': constraint_type,
-                })
-        
-        results['structures'][structure] = struct_results
-    
-    return results
-
-
-# =============================================================================
-# Evaluation Metrics
-# =============================================================================
-
-def compute_mae(pred: np.ndarray, target: np.ndarray, mask: Optional[np.ndarray] = None) -> float:
-    """Compute Mean Absolute Error, optionally within a mask."""
-    if mask is not None:
-        pred = pred[mask > 0]
-        target = target[mask > 0]
-    return float(np.mean(np.abs(pred - target)))
-
-
-def compute_dose_metrics(
-    pred: np.ndarray,
-    target: np.ndarray,
-    rx_dose_gy: float = 70.0,
-) -> Dict[str, float]:
-    """Compute various dose comparison metrics."""
-    
-    # Convert to Gy
-    pred_gy = pred * rx_dose_gy
-    target_gy = target * rx_dose_gy
-    
-    metrics = {
-        'mae_gy': compute_mae(pred_gy, target_gy),
-        'mae_normalized': compute_mae(pred, target),
-        'max_error_gy': float(np.max(np.abs(pred_gy - target_gy))),
-        'rmse_gy': float(np.sqrt(np.mean((pred_gy - target_gy)**2))),
-        'pred_max_gy': float(pred_gy.max()),
-        'target_max_gy': float(target_gy.max()),
-        'pred_mean_gy': float(pred_gy.mean()),
-        'target_mean_gy': float(target_gy.mean()),
-    }
-    
-    # Dose within threshold regions
-    for threshold in [0.1, 0.5, 0.9]:  # 10%, 50%, 90% of Rx
-        mask = target >= threshold
-        if mask.any():
-            metrics[f'mae_gy_above_{int(threshold*100)}pct'] = compute_mae(
-                pred_gy, target_gy, mask.astype(np.float32)
-            )
-    
-    return metrics
-
-
-def compute_gamma(
-    pred: np.ndarray,
-    target: np.ndarray,
-    spacing_mm: Tuple[float, ...] = DEFAULT_SPACING_MM,
-    dose_threshold_pct: float = 3.0,
-    distance_mm: float = 3.0,
-    lower_dose_cutoff_pct: float = 10.0,
-    subsample: int = 1,
-) -> Dict[str, float]:
-    """
-    Compute gamma pass rate.
-    
-    Args:
-        pred: Predicted dose in Gy
-        target: Ground truth dose in Gy
-        spacing_mm: Voxel spacing
-        dose_threshold_pct: Dose difference threshold (%)
-        distance_mm: Distance-to-agreement threshold (mm)
-        lower_dose_cutoff_pct: Ignore voxels below this % of max dose
-        subsample: Subsample factor for speed (1 = full resolution)
-    
-    Returns:
-        Dict with gamma pass rate and statistics
-    """
-    if not HAS_PYMEDPHYS:
-        return {'gamma_pass_rate': None, 'error': 'pymedphys not installed'}
-    
-    # Subsample if requested
-    if subsample > 1:
-        pred = pred[::subsample, ::subsample, ::subsample]
-        target = target[::subsample, ::subsample, ::subsample]
-        spacing_mm = tuple(s * subsample for s in spacing_mm)
-    
-    # Create coordinate axes
-    axes = tuple(
-        np.arange(s) * sp for s, sp in zip(pred.shape, spacing_mm)
-    )
-    
-    try:
-        gamma_map = pymedphys_gamma(
-            axes_reference=axes,
-            dose_reference=target,
-            axes_evaluation=axes,
-            dose_evaluation=pred,
-            dose_percent_threshold=dose_threshold_pct,
-            distance_mm_threshold=distance_mm,
-            lower_percent_dose_cutoff=lower_dose_cutoff_pct,
-        )
-        
-        valid = np.isfinite(gamma_map)
-        if not valid.any():
-            return {'gamma_pass_rate': 0.0, 'gamma_mean': None, 'gamma_max': None}
-        
-        pass_rate = float(np.mean(gamma_map[valid] <= 1.0) * 100)
-        
-        return {
-            'gamma_pass_rate': pass_rate,
-            'gamma_mean': float(np.mean(gamma_map[valid])),
-            'gamma_max': float(np.max(gamma_map[valid])),
-            'gamma_median': float(np.median(gamma_map[valid])),
-            'voxels_evaluated': int(valid.sum()),
-        }
-    
-    except Exception as e:
-        return {'gamma_pass_rate': None, 'error': str(e)}
-
-
-def compute_dvh_metrics(
-    pred: np.ndarray,
-    target: np.ndarray,
-    masks: np.ndarray,
-    structure_names: Dict[int, str],
-    rx_dose_gy: float = 70.0,
-    spacing_mm: Tuple[float, ...] = None,
-) -> Dict[str, Dict[str, float]]:
-    """
-    Compute DVH-based metrics for each structure.
-
-    Args:
-        pred: Predicted dose (normalized)
-        target: Ground truth dose (normalized)
-        masks: Binary masks (C, H, W, D)
-        structure_names: Channel to structure name mapping
-        rx_dose_gy: Prescription dose for denormalization
-        spacing_mm: Voxel spacing in mm (default: DEFAULT_SPACING_MM)
-
-    Returns:
-        Dict of metrics per structure
-    """
-    if spacing_mm is None:
-        spacing_mm = DEFAULT_SPACING_MM
-    pred_gy = pred * rx_dose_gy
-    target_gy = target * rx_dose_gy
-    
-    results = {}
-    
-    for ch, name in structure_names.items():
-        if ch >= masks.shape[0]:
-            continue
-        
-        mask = masks[ch] > 0
-        if not mask.any():
-            results[name] = {'exists': False}
-            continue
-        
-        pred_struct = pred_gy[mask]
-        target_struct = target_gy[mask]
-        
-        # Basic stats
-        metrics = {
-            'exists': True,
-            'volume_cc': float(mask.sum() * np.prod(spacing_mm) / 1000),
-            'mae_gy': float(np.mean(np.abs(pred_struct - target_struct))),
-            'pred_mean_gy': float(pred_struct.mean()),
-            'target_mean_gy': float(target_struct.mean()),
-            'pred_max_gy': float(pred_struct.max()),
-            'target_max_gy': float(target_struct.max()),
-            'pred_min_gy': float(pred_struct.min()),
-            'target_min_gy': float(target_struct.min()),
-        }
-        
-        # DVH points (Dx = dose to x% of volume)
-        for pct in [95, 50, 5, 2]:
-            metrics[f'pred_D{pct}'] = float(np.percentile(pred_struct, 100 - pct))
-            metrics[f'target_D{pct}'] = float(np.percentile(target_struct, 100 - pct))
-            metrics[f'D{pct}_error'] = metrics[f'pred_D{pct}'] - metrics[f'target_D{pct}']
-        
-        # Volume receiving dose (Vx = volume receiving >= x Gy)
-        for dose_level in [70, 60, 50, 40]:
-            pred_vx = float((pred_struct >= dose_level).sum() / len(pred_struct) * 100)
-            target_vx = float((target_struct >= dose_level).sum() / len(target_struct) * 100)
-            metrics[f'pred_V{dose_level}'] = pred_vx
-            metrics[f'target_V{dose_level}'] = target_vx
-            metrics[f'V{dose_level}_error'] = pred_vx - target_vx
-        
-        results[name] = metrics
-    
-    return results
+# NOTE: CLINICAL_CONSTRAINTS, check_clinical_constraints, compute_dose_metrics,
+# compute_gamma, compute_dvh_metrics are now imported from the centralized
+# evaluation framework (eval_clinical, eval_metrics).
 
 
 # =============================================================================
@@ -507,10 +135,10 @@ def evaluate_single_case(
     gamma_subsample: int = 2,
 ) -> Dict:
     """
-    Evaluate prediction against ground truth.
-    
+    Evaluate prediction against ground truth using centralized framework.
+
     Returns:
-        Dict with all metrics
+        Dict with all metrics (backward-compatible format)
     """
     # Load ground truth
     data = np.load(npz_path, allow_pickle=True)
@@ -521,49 +149,30 @@ def evaluate_single_case(
     metadata = data['metadata'].item() if 'metadata' in data.files else {}
     spacing = get_spacing_from_metadata(metadata)
 
-    # Structure names
-    structure_names = {
-        0: 'PTV70', 1: 'PTV56', 2: 'Prostate', 3: 'Rectum',
-        4: 'Bladder', 5: 'Femur_L', 6: 'Femur_R', 7: 'Bowel'
-    }
-
-    results = {
-        'case_id': Path(npz_path).stem,
-        'timestamp': datetime.now().isoformat(),
-        'spacing_mm': spacing,
-    }
-
-    # Dose metrics
-    print("  Computing dose metrics...")
-    results['dose_metrics'] = compute_dose_metrics(pred, target, rx_dose_gy)
-
-    # Gamma
-    if compute_gamma_metric and HAS_PYMEDPHYS:
-        print("  Computing gamma (this may take a moment)...")
-        pred_gy = pred * rx_dose_gy
-        target_gy = target * rx_dose_gy
-        results['gamma'] = compute_gamma(
-            pred_gy, target_gy,
-            spacing_mm=spacing,
-            subsample=gamma_subsample,
-        )
-
-    # DVH metrics
-    print("  Computing DVH metrics...")
-    results['dvh_metrics'] = compute_dvh_metrics(
-        pred, target, masks, structure_names, rx_dose_gy, spacing_mm=spacing
+    print("  Computing evaluation metrics...")
+    result = evaluate_case(
+        pred_normalized=pred,
+        target_normalized=target,
+        masks=masks,
+        spacing_mm=spacing,
+        case_id=Path(npz_path).stem,
+        rx_dose_gy=rx_dose_gy,
+        compute_gamma_metric=compute_gamma_metric,
+        gamma_subsample=gamma_subsample,
     )
-    
-    # Clinical constraint check
-    print("  Checking clinical constraints...")
-    results['clinical_constraints'] = check_clinical_constraints(results['dvh_metrics'])
-    
-    if results['clinical_constraints']['violations']:
-        print(f"  ⚠️  {len(results['clinical_constraints']['violations'])} constraint violation(s)")
+
+    # Convert to backward-compatible dict format
+    result_dict = result.to_dict()
+    result_dict['timestamp'] = datetime.now().isoformat()
+
+    # Print summary
+    cc = result_dict.get('clinical_constraints', {})
+    if cc.get('violations'):
+        print(f"  {len(cc['violations'])} constraint violation(s)")
     else:
-        print("  ✓ All clinical constraints passed")
-    
-    return results
+        print("  All clinical constraints passed")
+
+    return result_dict
 
 
 # =============================================================================
@@ -691,8 +300,9 @@ def main():
             print(f"    RMSE: {dm['rmse_gy']:.2f} Gy")
             print(f"    Max error: {dm['max_error_gy']:.2f} Gy")
             
-            if 'gamma' in results and results['gamma'].get('gamma_pass_rate') is not None:
-                print(f"    Gamma (3%/3mm): {results['gamma']['gamma_pass_rate']:.1f}%")
+            gamma_global = results.get('gamma', {}).get('global_3mm3pct', {})
+            if gamma_global.get('gamma_pass_rate') is not None:
+                print(f"    Gamma (3%/3mm): {gamma_global['gamma_pass_rate']:.1f}%")
             
             # PTV70 DVH
             if 'PTV70' in results['dvh_metrics'] and results['dvh_metrics']['PTV70']['exists']:
@@ -703,11 +313,11 @@ def main():
             if 'clinical_constraints' in results:
                 cc = results['clinical_constraints']
                 if cc['overall_pass']:
-                    print(f"    Clinical constraints: ✓ ALL PASSED")
+                    print(f"    Clinical constraints: ALL PASSED")
                 else:
-                    print(f"    Clinical constraints: ⚠️ {len(cc['violations'])} violation(s)")
+                    print(f"    Clinical constraints: {len(cc['violations'])} violation(s)")
                     for v in cc['violations'][:3]:  # Show up to 3
-                        print(f"      - {v['structure']} {v['constraint']}: {v['predicted']} (limit: {v['limit']})")
+                        print(f"      - {v['structure']} {v['metric']}: {v['predicted']} (limit: {v['limit']})")
     
     # Save aggregate results
     if args.compute_metrics and all_results:
@@ -715,8 +325,11 @@ def main():
         
         # Compute aggregate metrics
         mae_values = [r['dose_metrics']['mae_gy'] for r in all_results]
-        gamma_values = [r['gamma']['gamma_pass_rate'] for r in all_results 
-                       if 'gamma' in r and r['gamma'].get('gamma_pass_rate') is not None]
+        gamma_values = [
+            r['gamma']['global_3mm3pct']['gamma_pass_rate']
+            for r in all_results
+            if r.get('gamma', {}).get('global_3mm3pct', {}).get('gamma_pass_rate') is not None
+        ]
         
         summary = {
             'n_cases': len(all_results),
@@ -741,11 +354,11 @@ def main():
         total_violations = sum(len(r.get('clinical_constraints', {}).get('violations', [])) 
                               for r in all_results)
         
-        # Count violations by structure/constraint
+        # Count violations by structure/metric
         violation_counts = {}
         for r in all_results:
             for v in r.get('clinical_constraints', {}).get('violations', []):
-                key = f"{v['structure']}_{v['constraint']}"
+                key = f"{v['structure']}_{v['metric']}"
                 violation_counts[key] = violation_counts.get(key, 0) + 1
         
         summary['clinical_constraints'] = {
@@ -771,8 +384,8 @@ def main():
         }
         
         with open(results_path, 'w') as f:
-            json.dump(summary, f, indent=2)
-        
+            json.dump(summary, f, indent=2, cls=NumpyEncoder)
+
         print(f"\n{'='*60}")
         print("EVALUATION SUMMARY")
         print('='*60)

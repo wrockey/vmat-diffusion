@@ -23,13 +23,21 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from datetime import datetime
 
-# Optional: pymedphys for gamma
-try:
-    from pymedphys import gamma as pymedphys_gamma
-    HAS_PYMEDPHYS = True
-except ImportError:
-    HAS_PYMEDPHYS = False
-    print("Warning: pymedphys not installed. Region-specific Gamma disabled.")
+from eval_core import (
+    STRUCTURE_CHANNELS,
+    STRUCTURE_INDEX,
+    DEFAULT_SPACING_MM,
+    PRIMARY_PRESCRIPTION_GY,
+    get_spacing_from_metadata,
+)
+from eval_metrics import (
+    compute_gamma,
+    compute_region_gamma,
+    compute_dvh_metrics,
+    HAS_PYMEDPHYS,
+)
+from eval_clinical import check_clinical_constraints
+from eval_statistics import NumpyEncoder
 
 # Publication-quality defaults
 plt.rcParams.update({
@@ -62,231 +70,57 @@ COLORS = {
     'fail': '#d62728',
 }
 
-# Clinical constraints for prostate VMAT with SIB
-CLINICAL_CONSTRAINTS = {
-    'PTV70': {
-        'D95_min_gy': 66.5,  # 95% of 70 Gy
-        'D95_min_pct': 0.95,
-        'description': 'PTV70 D95 >= 95% Rx (66.5 Gy)',
-    },
-    'PTV56': {
-        'D95_min_gy': 53.2,  # 95% of 56 Gy
-        'D95_min_pct': 0.95,
-        'description': 'PTV56 D95 >= 95% Rx (53.2 Gy)',
-    },
-    'Rectum': {
-        'V70_max_pct': 0.15,  # V70 < 15%
-        'V65_max_pct': 0.25,  # V65 < 25%
-        'V50_max_pct': 0.50,  # V50 < 50%
-        'description': 'Rectum V70 < 15%, V65 < 25%, V50 < 50%',
-    },
-    'Bladder': {
-        'V70_max_pct': 0.25,  # V70 < 25%
-        'V65_max_pct': 0.50,  # V65 < 50%
-        'description': 'Bladder V70 < 25%, V65 < 50%',
-    },
-}
-
-RX_DOSE_GY = 70.0
-DEFAULT_SPACING_MM = (1.0, 1.0, 2.0)
+RX_DOSE_GY = PRIMARY_PRESCRIPTION_GY
 
 
-def get_spacing_from_metadata(metadata):
-    """
-    Extract voxel spacing from NPZ metadata with backwards-compatible fallback.
-    """
-    if isinstance(metadata, np.ndarray):
-        metadata = metadata.item()
-
-    if 'voxel_spacing_mm' in metadata:
-        spacing = metadata['voxel_spacing_mm']
-        return tuple(float(s) for s in spacing)
-
-    if 'target_spacing_mm' in metadata:
-        spacing = metadata['target_spacing_mm']
-        return tuple(float(s) for s in spacing)
-
-    return DEFAULT_SPACING_MM
-
-
-def load_prediction_and_target(pred_path: Path, data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, tuple]:
-    """Load prediction, target, masks, and spacing."""
+def load_prediction_and_target(pred_path: Path, data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, tuple]:
+    """Load prediction, target, binary masks, SDF masks, and spacing."""
     pred_data = np.load(pred_path)
-    pred_dose_raw = pred_data['dose']  # Normalized 0-1 scale
-    pred_dose = pred_dose_raw * RX_DOSE_GY  # Convert to Gy
+    pred_dose_raw = pred_data['dose']
+    pred_dose = pred_dose_raw * RX_DOSE_GY
 
     case_id = pred_path.stem.replace('_pred', '')
     target_path = data_dir / f'{case_id}.npz'
     target_data = np.load(target_path, allow_pickle=True)
 
-    target_dose = target_data['dose'] * RX_DOSE_GY  # Convert to Gy (normalized 0-1)
+    target_dose = target_data['dose'] * RX_DOSE_GY
     masks_sdf = target_data['masks_sdf']
+    masks = target_data['masks']
 
     metadata = target_data['metadata'].item() if 'metadata' in target_data.files else {}
     spacing = get_spacing_from_metadata(metadata)
 
-    return pred_dose, target_dose, masks_sdf, spacing
+    return pred_dose, target_dose, masks, masks_sdf, spacing
 
 
 def extract_structure_masks(masks_sdf: np.ndarray) -> Dict[str, np.ndarray]:
     """Extract boolean masks from SDF array."""
-    structure_names = ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder',
-                       'Femur_L', 'Femur_R', 'Bowel']
     masks = {}
-    for idx, name in enumerate(structure_names):
-        masks[name] = masks_sdf[idx] < 0  # Inside where SDF < 0
+    for idx, name in STRUCTURE_CHANNELS.items():
+        if idx < masks_sdf.shape[0]:
+            masks[name] = masks_sdf[idx] < 0  # Inside where SDF < 0
     return masks
 
 
-def compute_dvh_metrics(dose: np.ndarray, mask: np.ndarray) -> Dict:
-    """Compute DVH metrics for a structure."""
-    if not mask.any():
-        return {'exists': False}
-
-    dose_in_structure = dose[mask]
-    n_voxels = len(dose_in_structure)
-
-    # Sort for DVH computation
-    sorted_dose = np.sort(dose_in_structure)[::-1]  # Descending
-
-    # Dx metrics (dose received by x% of volume)
-    d95_idx = int(0.95 * n_voxels)
-    d50_idx = int(0.50 * n_voxels)
-    d5_idx = int(0.05 * n_voxels)
-
-    d95 = sorted_dose[min(d95_idx, n_voxels-1)]
-    d50 = sorted_dose[min(d50_idx, n_voxels-1)]
-    d5 = sorted_dose[min(d5_idx, n_voxels-1)]
-
-    # Vx metrics (volume receiving at least x Gy)
-    v70 = np.sum(dose_in_structure >= 70.0) / n_voxels
-    v65 = np.sum(dose_in_structure >= 65.0) / n_voxels
-    v50 = np.sum(dose_in_structure >= 50.0) / n_voxels
-    v40 = np.sum(dose_in_structure >= 40.0) / n_voxels
-
-    return {
-        'exists': True,
-        'n_voxels': n_voxels,
-        'mean_gy': float(np.mean(dose_in_structure)),
-        'max_gy': float(np.max(dose_in_structure)),
-        'min_gy': float(np.min(dose_in_structure)),
-        'd95_gy': float(d95),
-        'd50_gy': float(d50),
-        'd5_gy': float(d5),
-        'v70': float(v70),
-        'v65': float(v65),
-        'v50': float(v50),
-        'v40': float(v40),
-    }
-
-
-def check_clinical_constraints(pred_dvh: Dict, target_dvh: Dict, structure: str) -> Dict:
-    """Check if predictions meet clinical constraints."""
-    results = {'structure': structure, 'constraints': []}
-
-    if structure not in CLINICAL_CONSTRAINTS:
-        return results
-
-    constraints = CLINICAL_CONSTRAINTS[structure]
-
-    # PTV D95 constraint
-    if 'D95_min_gy' in constraints:
-        pred_d95 = pred_dvh.get('d95_gy', 0)
-        target_d95 = target_dvh.get('d95_gy', 0)
-        threshold = constraints['D95_min_gy']
-
-        pred_pass = pred_d95 >= threshold
-        target_pass = target_d95 >= threshold
-
-        results['constraints'].append({
-            'name': f'{structure} D95 >= {threshold:.1f} Gy',
-            'pred_value': pred_d95,
-            'target_value': target_d95,
-            'threshold': threshold,
-            'pred_pass': pred_pass,
-            'target_pass': target_pass,
-            'type': 'D95',
-        })
-
-    # OAR Vx constraints
-    for vx_key in ['V70_max_pct', 'V65_max_pct', 'V50_max_pct']:
-        if vx_key in constraints:
-            dose_level = int(vx_key[1:3])
-            vx_name = f'v{dose_level}'
-            pred_vx = pred_dvh.get(vx_name, 0)
-            target_vx = target_dvh.get(vx_name, 0)
-            threshold = constraints[vx_key]
-
-            pred_pass = pred_vx <= threshold
-            target_pass = target_vx <= threshold
-
-            results['constraints'].append({
-                'name': f'{structure} V{dose_level} <= {threshold*100:.0f}%',
-                'pred_value': pred_vx,
-                'target_value': target_vx,
-                'threshold': threshold,
-                'pred_pass': pred_pass,
-                'target_pass': target_pass,
-                'type': f'V{dose_level}',
-            })
-
-    return results
-
-
-def compute_region_gamma(
+def _compute_region_gamma_compat(
     pred_gy: np.ndarray,
     target_gy: np.ndarray,
     mask: np.ndarray,
     spacing_mm: tuple = DEFAULT_SPACING_MM,
     subsample: int = 2,
 ) -> Dict:
-    """Compute Gamma only within a specific region (masked)."""
-    if not HAS_PYMEDPHYS or not mask.any():
-        return {'computed': False, 'reason': 'No voxels or pymedphys unavailable'}
-
-    # Subsample for speed
-    pred_sub = pred_gy[::subsample, ::subsample, ::subsample].astype(np.float64)
-    target_sub = target_gy[::subsample, ::subsample, ::subsample].astype(np.float64)
-    mask_sub = mask[::subsample, ::subsample, ::subsample]
-
-    spacing_sub = tuple(s * subsample for s in spacing_mm)
-
-    # Create axes
-    axes = tuple(
-        np.arange(s) * sp for s, sp in zip(pred_sub.shape, spacing_sub)
+    """Wrapper around framework compute_region_gamma with backward-compatible output."""
+    result = compute_region_gamma(
+        pred_gy, target_gy, mask,
+        spacing_mm=spacing_mm, subsample=subsample,
     )
-
-    try:
-        # Compute full gamma map
-        gamma_map = pymedphys_gamma(
-            axes_reference=axes,
-            dose_reference=target_sub,
-            axes_evaluation=axes,
-            dose_evaluation=pred_sub,
-            dose_percent_threshold=3.0,
-            distance_mm_threshold=3.0,
-            lower_percent_dose_cutoff=10.0,
-            max_gamma=2.0,
-        )
-
-        # Extract gamma values within mask
-        valid_gamma = gamma_map[mask_sub & ~np.isnan(gamma_map)]
-
-        if len(valid_gamma) == 0:
-            return {'computed': False, 'reason': 'No valid gamma voxels in region'}
-
-        pass_rate = np.sum(valid_gamma <= 1.0) / len(valid_gamma) * 100
-
-        return {
-            'computed': True,
-            'gamma_pass_rate': float(pass_rate),
-            'gamma_mean': float(np.mean(valid_gamma)),
-            'gamma_median': float(np.median(valid_gamma)),
-            'gamma_max': float(np.max(valid_gamma)),
-            'n_voxels': int(len(valid_gamma)),
-        }
-    except Exception as e:
-        return {'computed': False, 'reason': str(e)}
+    # Add 'computed' key for backward compatibility
+    if result.get('gamma_pass_rate') is not None:
+        result['computed'] = True
+    else:
+        result['computed'] = False
+        result['reason'] = result.get('error', result.get('note', 'unknown'))
+    return result
 
 
 def analyze_single_case(
@@ -297,7 +131,7 @@ def analyze_single_case(
     case_id = pred_path.stem.replace('_pred', '')
     print(f"\nAnalyzing: {case_id}")
 
-    pred_dose, target_dose, masks_sdf, spacing = load_prediction_and_target(pred_path, data_dir)
+    pred_dose, target_dose, binary_masks, masks_sdf, spacing = load_prediction_and_target(pred_path, data_dir)
     masks = extract_structure_masks(masks_sdf)
 
     results = {
@@ -309,53 +143,111 @@ def analyze_single_case(
         'region_gamma': {},
     }
 
-    # Compute DVH metrics for each structure
+    # Compute DVH metrics using framework (operates on Gy already)
     print("  Computing DVH metrics...")
-    for structure in ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder', 'Bowel']:
-        if structure in masks:
-            pred_dvh = compute_dvh_metrics(pred_dose, masks[structure])
-            target_dvh = compute_dvh_metrics(target_dose, masks[structure])
+    framework_dvh = compute_dvh_metrics(
+        pred_dose, target_dose, binary_masks,
+        spacing_mm=spacing, rx_dose_gy=1.0,  # Already in Gy
+    )
 
+    # Store per-structure DVH for backward compatibility with figure functions
+    for structure in ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder', 'Bowel']:
+        if structure in framework_dvh and framework_dvh[structure].get('exists', False):
+            m = framework_dvh[structure]
             results['dvh_metrics'][structure] = {
-                'pred': pred_dvh,
-                'target': target_dvh,
+                'pred': {
+                    'exists': True,
+                    'n_voxels': m.get('n_voxels', 0),
+                    'mean_gy': m['pred_mean_gy'],
+                    'max_gy': m['pred_max_gy'],
+                    'min_gy': m['pred_min_gy'],
+                    'd95_gy': m['pred_D95'],
+                    'd50_gy': m['pred_D50'],
+                    'd5_gy': m['pred_D5'],
+                    'v70': m.get('pred_V70', 0) / 100.0,  # Convert % to fraction
+                    'v65': 0.0,  # Not computed in framework
+                    'v50': m.get('pred_V50', 0) / 100.0,
+                    'v40': m.get('pred_V40', 0) / 100.0,
+                },
+                'target': {
+                    'exists': True,
+                    'n_voxels': m.get('n_voxels', 0),
+                    'mean_gy': m['target_mean_gy'],
+                    'max_gy': m['target_max_gy'],
+                    'min_gy': m['target_min_gy'],
+                    'd95_gy': m['target_D95'],
+                    'd50_gy': m['target_D50'],
+                    'd5_gy': m['target_D5'],
+                    'v70': m.get('target_V70', 0) / 100.0,
+                    'v65': 0.0,
+                    'v50': m.get('target_V50', 0) / 100.0,
+                    'v40': m.get('target_V40', 0) / 100.0,
+                },
             }
 
-            # Check clinical constraints
-            constraint_check = check_clinical_constraints(pred_dvh, target_dvh, structure)
-            if constraint_check['constraints']:
-                results['constraint_results'].append(constraint_check)
+    # Clinical constraints via framework
+    clinical_result = check_clinical_constraints(framework_dvh)
+    # Convert to backward-compatible format
+    for structure_name, struct_data in clinical_result.get('structures', {}).items():
+        if struct_data.get('constraints_checked'):
+            constraint_list = []
+            for c in struct_data['constraints_checked']:
+                target_val = framework_dvh.get(structure_name, {}).get(
+                    f'target_{c["metric"]}',
+                    framework_dvh.get(structure_name, {}).get('target_max_gy', 0)
+                    if c['metric'] == 'Dmax' else 0
+                )
+                constraint_list.append({
+                    'name': c.get('description', f'{structure_name} {c["metric"]}'),
+                    'pred_value': c['predicted'],
+                    'target_value': target_val,
+                    'threshold': c['limit'],
+                    'pred_pass': c['passed'],
+                    'target_pass': True,  # GT usually passes
+                    'type': c['metric'],
+                })
+            if constraint_list:
+                results['constraint_results'].append({
+                    'structure': structure_name,
+                    'constraints': constraint_list,
+                })
 
-    # Compute region-specific Gamma
+    # Compute region-specific Gamma using framework
     print("  Computing region-specific Gamma...")
 
     # PTV-only Gamma (combined PTV70 + PTV56)
-    ptv_mask = masks['PTV70'] | masks['PTV56']
-    results['region_gamma']['PTV_combined'] = compute_region_gamma(
+    ptv_mask = masks.get('PTV70', np.zeros(pred_dose.shape, dtype=bool)) | \
+               masks.get('PTV56', np.zeros(pred_dose.shape, dtype=bool))
+    results['region_gamma']['PTV_combined'] = _compute_region_gamma_compat(
         pred_dose, target_dose, ptv_mask, spacing_mm=spacing, subsample=2
     )
-    print(f"    PTV Gamma: {results['region_gamma']['PTV_combined'].get('gamma_pass_rate', 'N/A'):.1f}%")
+    ptv_rate = results['region_gamma']['PTV_combined'].get('gamma_pass_rate', 'N/A')
+    print(f"    PTV Gamma: {ptv_rate:.1f}%" if isinstance(ptv_rate, float) else f"    PTV Gamma: {ptv_rate}")
 
     # OAR Gamma (Rectum + Bladder)
-    oar_mask = masks['Rectum'] | masks['Bladder']
-    results['region_gamma']['OAR_combined'] = compute_region_gamma(
+    oar_mask = masks.get('Rectum', np.zeros(pred_dose.shape, dtype=bool)) | \
+               masks.get('Bladder', np.zeros(pred_dose.shape, dtype=bool))
+    results['region_gamma']['OAR_combined'] = _compute_region_gamma_compat(
         pred_dose, target_dose, oar_mask, spacing_mm=spacing, subsample=2
     )
-    print(f"    OAR Gamma: {results['region_gamma']['OAR_combined'].get('gamma_pass_rate', 'N/A'):.1f}%")
+    oar_rate = results['region_gamma']['OAR_combined'].get('gamma_pass_rate', 'N/A')
+    print(f"    OAR Gamma: {oar_rate:.1f}%" if isinstance(oar_rate, float) else f"    OAR Gamma: {oar_rate}")
 
     # High-dose region (>50% Rx)
     high_dose_mask = target_dose > (0.5 * RX_DOSE_GY)
-    results['region_gamma']['high_dose'] = compute_region_gamma(
+    results['region_gamma']['high_dose'] = _compute_region_gamma_compat(
         pred_dose, target_dose, high_dose_mask, spacing_mm=spacing, subsample=2
     )
-    print(f"    High-dose Gamma: {results['region_gamma']['high_dose'].get('gamma_pass_rate', 'N/A'):.1f}%")
+    hd_rate = results['region_gamma']['high_dose'].get('gamma_pass_rate', 'N/A')
+    print(f"    High-dose Gamma: {hd_rate:.1f}%" if isinstance(hd_rate, float) else f"    High-dose Gamma: {hd_rate}")
 
-    # Low-dose region (10-50% Rx) - the "no man's land"
+    # Low-dose region (10-50% Rx)
     low_dose_mask = (target_dose > (0.1 * RX_DOSE_GY)) & (target_dose <= (0.5 * RX_DOSE_GY))
-    results['region_gamma']['low_dose'] = compute_region_gamma(
+    results['region_gamma']['low_dose'] = _compute_region_gamma_compat(
         pred_dose, target_dose, low_dose_mask, spacing_mm=spacing, subsample=2
     )
-    print(f"    Low-dose Gamma: {results['region_gamma']['low_dose'].get('gamma_pass_rate', 'N/A'):.1f}%")
+    ld_rate = results['region_gamma']['low_dose'].get('gamma_pass_rate', 'N/A')
+    print(f"    Low-dose Gamma: {ld_rate:.1f}%" if isinstance(ld_rate, float) else f"    Low-dose Gamma: {ld_rate}")
 
     return results
 
@@ -678,22 +570,10 @@ def main():
     # Save results
     results_file = output_dir / 'analysis_results.json'
     with open(results_file, 'w') as f:
-        # Convert numpy types for JSON serialization
-        def convert(obj):
-            if isinstance(obj, np.integer):
-                return int(obj)
-            elif isinstance(obj, np.floating):
-                return float(obj)
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, bool):
-                return bool(obj)
-            return obj
-
         json.dump({
             'all_results': all_results,
             'summary': summary,
-        }, f, indent=2, default=convert)
+        }, f, indent=2, cls=NumpyEncoder)
     print(f"\nResults saved to: {results_file}")
 
     print("\n" + "="*70)
