@@ -183,29 +183,32 @@ All components already implemented in prior experiments — need to combine with
 
 ### Current Phase: Phase 0 (Setup) — Data collection in progress
 
-**Dataset:** 76 anonymized prostate DICOM-RT cases collected, 74 processed (v2.3.0 pipeline). Expected total: **250-300 cases**. 2 cases failed (data quality — see #4 comments for anomaly report).
+**Dataset:**
+- Institution A: 76 cases collected, 74 processed (11 SIB, 63 single-Rx). Multiple planners.
+- Institution B: ~150 cases expected (all SIB with PTV70 + PTV56). Single planner.
+- **Projected usable: ~161 SIB cases** from 2 institutions (after applying inclusion criteria)
+- **IRB: Approved**
+- **Compute: RTX 3090 (local), Argon HPC (available for Phase 2 scaling)**
 
-**Completed this phase:**
+**Completed:**
 - #1 WSL dev environment (CLOSED)
 - #4 D95 pipeline artifact fix (CLOSED — verified on 74 cases, all D95 >= 66.3 Gy)
 
 **In progress:**
-- #2 Collect and anonymize remaining cases (76 of ~250-300 collected)
-- #3 Preprocess all cases (74/76 done, will reprocess as more arrive)
+- #2 Collect and anonymize remaining ~150 Institution B cases
+- #3 Preprocess all cases (74/76 Institution A done)
 
-### Transition: Home (Pilot) → Work (Production)
+**Blocking next phase:**
+- #38 Locked stratified test set (needs data collection complete)
+- #39 Formal inclusion/exclusion criteria (needs to be defined)
+- #40 Data lock and versioning (needs data collection complete)
 
-The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that validated methodology and loss function design. The trained weights are not worth porting — the code and documented findings are the deliverables.
+### Transition: Pilot → Production
 
-**What transfers from the pilot:**
-- All loss function implementations (gradient, DVH-aware, structure-weighted, asymmetric PTV)
-- The strategic direction (clinical acceptability > global Gamma)
-- The decisions log (DDPM dead end, VGG useless, etc.)
-- The preprocessing pipeline and evaluation infrastructure
+The pilot phase (23 cases, single institution, v2.2.0 data) is complete. It validated methodology and loss function design. The code transfers; the metrics do not.
 
-**What does NOT transfer:**
-- Trained checkpoints (retrain from scratch on 100+ cases)
-- The 23-case test set results (n=2 test set is not statistically meaningful)
+**What transfers:** Loss implementations, strategic direction, pipeline code, decisions log.
+**What does NOT transfer:** Any trained weights or specific metrics (all invalidated by D95 artifact).
 
 ### Pilot Study Results (n=23, Home Machine — METRICS INVALID)
 
@@ -246,70 +249,169 @@ Detailed tasks for each phase are tracked as **GitHub Issues** with phase labels
 
 ### Phase 0: Work Machine Setup — Milestone: `Phase 0: Setup`
 
-**Goal:** Production environment ready with 100+ cases and fixed evaluation pipeline.
+**Goal:** Dataset collected, processed, locked, and ready for experiments.
 
 Key items (see GitHub Issues with `phase/0-setup` label):
-- WSL environment setup on work machine
-- Collect and anonymize 100+ DICOM-RT cases
-- Preprocess all cases
-- **Fix D95 pipeline artifact** (CRITICAL — blocks all DVH evaluation)
-- Document data provenance and ethics for publication
+- ~~WSL environment setup~~ (#1 DONE)
+- ~~Fix D95 pipeline artifact~~ (#4 DONE)
+- Collect and anonymize ~220 DICOM-RT cases (#2 — in progress)
+- Preprocess all cases with v2.3 pipeline (#3 — in progress, 74/76 done)
+- Define inclusion/exclusion criteria (#39)
+- Lock dataset and version NPZ files (#40)
+- Define locked stratified test set (#38)
+- Document IRB approval (#42)
 
 ### Phase 1: Clinical Evaluation Framework — Milestone: `Phase 1: Evaluation Framework`
 
-**Goal:** Define what "good" means before training anything on the new dataset.
+**Goal:** Define what "good" means, establish baseline, validate pipeline end-to-end.
 
 Key items (see GitHub Issues with `phase/1-eval` label):
-- **Run baseline U-Net on v2.3 data** (#37) — validates pipeline end-to-end, establishes new baseline
-- Per-structure DVH compliance evaluation
-- PTV-region Gamma at multiple dose thresholds
-- Dose gradient/falloff analysis
-- Single-case clinical acceptability report
-- Physician preference ranking study (plan early, execute after Phase 2)
+- **Literature review** (#41) — establish benchmarks from published prostate dose prediction papers
+- **Run baseline U-Net on v2.3 data** (#37) — validates pipeline, establishes new baseline
+- Implement enhanced data augmentation (#44)
+- Per-structure DVH compliance evaluation (#6)
+- PTV-region Gamma at multiple thresholds (#7)
+- Dose gradient/falloff analysis (#8)
+- Single-case clinical acceptability report (#9)
+- Physician preference ranking study (#10 — plan early, execute after Phase 2)
 
-### Phase 2: Combined Loss Experiment — Milestone: `Phase 2: Combined Loss`
+### Phase 2: Ablation Study — Milestone: `Phase 2: Combined Loss`
 
-**Goal:** First publishable experiment — combined 5-component loss with uncertainty weighting.
+**Goal:** Systematic ablation study of loss-function engineering. This IS the paper.
+
+**See Pre-Registered Analysis Plan below for full experimental design.**
 
 Key items (see GitHub Issues with `phase/2-combined` label):
-- Replace calibration script stubs with real loss functions
-- Extend UncertaintyWeightedLoss for per-component initialization
-- Integrate combined loss into training script
-- Run 3-seed experiment on 100+ cases with mid-training ablation
-
-**Loss weight strategy** (decided 2026-02-17):
-1. **Normalize first:** Calibrate with real losses → `loss_normalization_calib.json`
-2. **Uncertainty Weighting (Kendall 2018):** Learn σ per loss, weights = 1/(2σ²)
-3. **Fallback:** GradNorm if any loss dominates
-
-**Expected results with 250-300 cases:**
-- Global 3%/3mm: 75-88% (literature benchmark)
-- PTV-region 3%/3mm: 90-95%+
-- Publishable results with multi-seed statistics
+- Loss calibration (#11) and uncertainty weighting (#12, #13)
+- Ablation study design (#43) — 10 conditions × 3 seeds = 30 runs
+- Run experiments (#14) — RTX 3090 or Argon HPC
 
 ### Phase 3: Iterate & Publish — Milestone: `Phase 3: Iterate & Publish`
 
 **Goal:** Result-driven iteration, failure analysis, and manuscript submission.
 
 Key items (see GitHub Issues with `phase/3-iterate` label):
-- Analyze Phase 2 results → determine next direction
-- Failure case report (bottom 10%)
-- Code release preparation (anonymize, DOI)
-- Medical Physics manuscript
+- Analyze Phase 2 results → determine next direction (#15)
+- Failure case report (bottom 10%) (#16)
+- Cross-institutional validation analysis
+- Code release preparation (#17)
+- Medical Physics manuscript (#18)
 
 ### Parking Lot — GitHub Issues with `type/backburner` label
 
-Ideas to revisit only if the above plateaus:
-- #19 Adversarial loss (PatchGAN)
-- #20 Flow Matching / Consistency Models
-- #21 Architecture alternatives (nnU-Net, Swin-UNETR)
-- #22 Ensemble of existing models
-- #23 OAR contour perturbation augmentation
-- #31 3D Unified Latents / latent diffusion (from Grok review 2026-02-23)
-- #32 Synthetic data generator via PortPy/OpenTPS (from Grok review 2026-02-23)
-- #33 nnU-Net-style resampling & preprocessing (from Grok review 2026-02-23) — **Deferred by expert panel**
-- #35 Anisotropic patch sizes 128×128×64 (from expert review 2026-02-23)
-- #36 HU windowing experiment [-200, 1500] (from expert review 2026-02-23)
+Ideas to revisit only if the above plateaus. See GitHub for full list.
+
+---
+
+## PRE-REGISTERED ANALYSIS PLAN
+
+**Commit this plan before seeing any v2.3 experiment results.** Changes after results are seen must be documented as deviations with justification.
+
+### Study Design
+
+**Title:** "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"
+**Target journal:** Medical Physics
+
+### Dataset
+
+| Source | Cases | Plan Type | Planners |
+|--------|-------|-----------|----------|
+| Institution A | ~11 SIB (of ~70 total) | SIB (70/56 Gy) | Multiple |
+| Institution B | ~150 | SIB (70/56 Gy) | Single |
+| **Total** | **~161 SIB** | | |
+
+**Inclusion criteria (#39):**
+- Prostate VMAT with SIB protocol (PTV70 + PTV56)
+- All critical structures contoured (PTV70, PTV56, Rectum, Bladder minimum)
+- PTV70 D95 ≥ 64 Gy in ground truth
+- Complete DICOM-RT (CT + RTSTRUCT + RTDOSE + RTPLAN)
+
+**Exclusion:** Non-SIB plans, missing PTV70/PTV56, corrupt contours
+
+### Data Split (#38)
+
+**Locked stratified split** — defined once before any training, frozen for all experiments.
+
+- **~80% train** (~129 cases), **~10% val** (~16), **~10% test** (~16)
+- Stratified by: institution (both represented in test) and PTV70 volume tertile
+- Saved to `data/splits/` and committed to git
+- Each seed uses the SAME test/val sets; only training order and augmentation differ
+
+### Experimental Conditions (#43)
+
+| # | Condition | Loss Components |
+|---|-----------|----------------|
+| 1 | Baseline (MSE) | MSE only |
+| 2 | +Gradient | MSE + Gradient |
+| 3 | +DVH | MSE + DVH-aware |
+| 4 | +Structure | MSE + Structure-weighted |
+| 5 | +AsymPTV | MSE + Asymmetric PTV |
+| 6 | **Full combined** | **All 5 + uncertainty weighting** |
+| 7 | Full − Gradient | Ablation |
+| 8 | Full − DVH | Ablation |
+| 9 | Full − Structure | Ablation |
+| 10 | Full − AsymPTV | Ablation |
+
+**Total: 10 conditions × 3 seeds = 30 training runs**
+
+### Metrics (pre-registered)
+
+**Primary outcomes** (what determines if a method is "better"):
+
+| Metric | Definition | Clinically meaningful threshold |
+|--------|-----------|-------------------------------|
+| PTV70 D95 error | \|predicted D95 − GT D95\| | < 2 Gy |
+| PTV56 D95 error | \|predicted D95 − GT D95\| | < 2 Gy |
+| OAR DVH compliance | % of OAR constraints met | > 90% |
+
+**Secondary outcomes** (reported, support primary):
+
+| Metric | Definition |
+|--------|-----------|
+| PTV-region Gamma 3%/3mm | Gamma pass rate within PTV70 + 5mm margin |
+| MAE (Gy) | Mean absolute error across all voxels |
+| Per-structure Dmean error | \|predicted Dmean − GT Dmean\| per OAR |
+
+**Diagnostic** (tracked, not used for decisions):
+
+| Metric | Definition |
+|--------|-----------|
+| Global Gamma 3%/3mm | Full-volume gamma pass rate |
+| Global Gamma 2%/2mm | For literature comparison |
+
+### Statistical Analysis
+
+1. **Per-condition summary:** mean ± std across 3 seeds, with 95% CI
+2. **Pairwise comparison vs baseline:** Wilcoxon signed-rank test on all seed×case paired observations (3 seeds × ~16 test cases = ~48 pairs per comparison)
+3. **Multiple comparison correction:** Bonferroni (9 comparisons vs baseline → significance at p < 0.0056)
+4. **Effect size:** Cohen's d for each comparison
+5. **Ablation analysis:** Full combined vs each remove-one variant (4 paired tests, Bonferroni-corrected)
+
+### Cross-Institutional Validation
+
+Secondary analysis (reported in paper, not primary outcome):
+- Train on Institution B only → test on Institution A SIB cases
+- Train on Institution A + B → test (standard)
+- Report performance gap: same-institution vs cross-institution
+
+### Pre-Specified Decision Rules
+
+These decisions are made NOW, before seeing results:
+
+| If... | Then... |
+|-------|---------|
+| Full combined beats baseline on ALL primary metrics (p < 0.005) | Report as primary finding |
+| Full combined beats baseline on SOME but not all primary metrics | Report both improvements and regressions transparently |
+| No condition beats baseline significantly | Report as negative result — still publishable as "loss engineering does not help beyond MSE for this dataset" |
+| One individual loss component (e.g., +Gradient alone) matches or beats full combined | Report as finding — simpler is better |
+| Cross-institutional performance drops > 20% relative | Report as limitation, discuss generalizability |
+
+### Deviations from Plan
+
+Any change to the analysis plan after seeing v2.3 results MUST be:
+1. Documented as a deviation in the experiment notebook
+2. Justified with a non-results-based rationale
+3. Reported transparently in the paper (e.g., "we additionally performed X, which was not pre-specified")
 
 ---
 

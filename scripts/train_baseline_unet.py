@@ -218,32 +218,70 @@ class VMATDosePatchDataset(Dataset):
     def _augment(
         self, ct: np.ndarray, dose: np.ndarray, sdf: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Apply augmentations (same as diffusion: X-flip + translation only)."""
-        
+        """Apply random augmentations.
+
+        Augmentations applied:
+        1. Left-right (X-axis) flip (50% probability)
+           - Valid for prostate due to bilateral symmetry
+           - Swaps Femur_L/Femur_R SDF channels
+
+        2. Random translation ±16 voxels (50% probability)
+           - Simulates patient positioning variation between fractions
+           - ±16 voxels ≈ ±16-32mm at 1-2mm resolution
+
+        3. Small Z-axis rotation ±5° (50% probability)
+           - Simulates patient setup rotation error
+           - All volumes rotated together (preserves dose-anatomy relationship)
+
+        4. CT intensity noise (30% probability)
+           - Gaussian noise σ=0.02 in normalized space (~80 HU)
+           - Applied only to CT, not dose or SDFs
+           - Improves robustness to scanner noise variation
+
+        Augmentations NOT applied (physics violations):
+        - Y-flip (anterior-posterior): Beam entry direction matters
+        - Z-flip (superior-inferior): Anatomy not symmetric
+        - 90° rotations: Beam angles are meaningful
+        - Dose intensity shifts: Dose values are physical quantities
+        """
+        from scipy.ndimage import shift as ndimage_shift, rotate as ndimage_rotate
+
         # 1. Random flip along X-axis only (left-right)
         if np.random.rand() > 0.5:
             ct = np.flip(ct, axis=0)
             dose = np.flip(dose, axis=0)
             sdf = np.flip(sdf, axis=1)
-            
+
             # Swap femur channels
             sdf_copy = sdf.copy()
             sdf[5] = sdf_copy[6]
             sdf[6] = sdf_copy[5]
-        
+
         # 2. Random translation ±16 voxels
         if np.random.rand() > 0.5:
-            from scipy.ndimage import shift as ndimage_shift
-            
             max_shift = 16
             shift_y = np.random.randint(-max_shift, max_shift + 1)
             shift_x = np.random.randint(-max_shift, max_shift + 1)
             shift_z = np.random.randint(-max_shift, max_shift + 1)
-            
+
             ct = ndimage_shift(ct, (shift_y, shift_x, shift_z), order=1, mode='nearest')
             dose = ndimage_shift(dose, (shift_y, shift_x, shift_z), order=1, mode='nearest')
             sdf = ndimage_shift(sdf, (0, shift_y, shift_x, shift_z), order=1, mode='nearest')
-        
+
+        # 3. Small Z-axis rotation ±5°
+        if np.random.rand() > 0.5:
+            angle = np.random.uniform(-5.0, 5.0)
+            # Rotate in Y-X plane (axes 0,1) = rotation around Z axis
+            ct = ndimage_rotate(ct, angle, axes=(0, 1), reshape=False, order=1, mode='nearest')
+            dose = ndimage_rotate(dose, angle, axes=(0, 1), reshape=False, order=1, mode='nearest')
+            for ch in range(sdf.shape[0]):
+                sdf[ch] = ndimage_rotate(sdf[ch], angle, axes=(0, 1), reshape=False, order=1, mode='nearest')
+
+        # 4. CT intensity noise
+        if np.random.rand() > 0.7:
+            noise = np.random.normal(0, 0.02, ct.shape).astype(np.float32)
+            ct = np.clip(ct + noise, 0.0, 1.26)
+
         return np.ascontiguousarray(ct), np.ascontiguousarray(dose), np.ascontiguousarray(sdf)
 
 
