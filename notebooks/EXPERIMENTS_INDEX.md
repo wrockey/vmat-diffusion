@@ -13,7 +13,7 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 | Date | ID | Git Hash | Notebook | Model | MAE (Gy) | Gamma 3%/3mm | PTV70 D95 Gap | Status |
 |------|-----|----------|----------|-------|----------|--------------|---------------|--------|
-| — | — | — | — | — | — | — | — | No v2.3 experiments yet |
+| 2026-02-24 | baseline_v23 | `82bddc5` | [notebook](2026-02-24_baseline_v23_preliminary.ipynb) | BaselineUNet3D | 5.36 ± 1.96 (test) | 27.7 ± 11.2% (global), 85.5 ± 10.9% (PTV) | -0.86 ± 0.92 Gy | Preliminary (seed 42 only) |
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
@@ -58,4 +58,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-02-23*
+*Last updated: 2026-02-24*
