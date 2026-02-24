@@ -170,12 +170,12 @@ Loss = w_ptv * L_ptv_asymmetric  +  w_oar * L_oar_dvh  +  w_gradient * L_gradien
 
 All components already implemented in prior experiments — need to combine with appropriate weights.
 
-### What NOT to Pursue
+### What NOT to Pursue (Currently)
 
 - Global Gamma as an optimization target (track it, don't chase it)
-- DDPM tuning (structural mismatch — see Decisions Log)
-- VGG perceptual loss (no Gamma improvement, 5x training overhead)
-- Pure MSE/MAE optimization (causes PTV underdosing)
+- DDPM tuning — deprioritized, not abandoned. Revisit if Phase 2 U-Net results plateau (#27)
+- VGG perceptual loss (no Gamma improvement, 5x training overhead — pilot observation, may change with correct data)
+- Pure MSE/MAE optimization (causes PTV underdosing — pilot observation)
 
 ---
 
@@ -207,7 +207,9 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 - Trained checkpoints (retrain from scratch on 100+ cases)
 - The 23-case test set results (n=2 test set is not statistically meaningful)
 
-### Pilot Study Results (n=23, Home Machine — For Reference Only)
+### Pilot Study Results (n=23, Home Machine — METRICS INVALID)
+
+> **WARNING:** All pilot metrics below were computed on v2.2.0 data with the D95 artifact (#4). Absolute values are invalid and cannot be cited. The pilot established methodology and loss implementations — not reliable metrics. See EXPERIMENTS_INDEX.md for details.
 
 | Model | Val MAE | Test MAE | Gamma | PTV Gamma | D95 Gap | Key Strength |
 |-------|---------|----------|-------|-----------|---------|--------------|
@@ -217,13 +219,19 @@ The home phase (23 cases, RTX 3090) is complete. It was a **pilot study** that v
 | Structure-Weighted | **2.91 Gy** | 1.40 Gy | **31.2%** | **41.5%** | ~-7 Gy | **Best Gamma** |
 | Asymmetric PTV | 3.36 Gy | 1.89 Gy | — | — | **-5.95 Gy** | **Best D95** |
 
-### Key Findings from Pilot
+### What Transfers from the Pilot (and What Doesn't)
 
-- **PTV-region Gamma** (41.5%) much higher than overall (31.2%) — confirms model is more accurate where it matters clinically.
-- **Ground truth PTV70 D95 reads 55 Gy** — now identified as a **pipeline artifact** (PTV mask/dose grid boundary mismatch), NOT a clinical finding. All delivered plans have D95 >= 66.5 Gy. Priority fix for Phase 0. See decisions log 2026-02-17.
-- **Pilot Gamma (28-31% global)** is in line with the field at n=23 — literature benchmarks show 75-85% at n=50-100. Not a model failure. Expect 75-88% global / 90-95% PTV-region with 100+ cases.
-- **All models pass OAR constraints** but D95 gap appeared to show systematic PTV underdosing (may be partly or fully explained by the D95 artifact above).
-- **Gradient loss is essential** — nearly doubled Gamma for free.
+**Valid (methodology, not metrics):**
+- Loss function implementations (gradient, DVH-aware, structure-weighted, asymmetric PTV)
+- The qualitative observation that PTV-region Gamma > global Gamma
+- The semi-multi-modal hypothesis (low-dose diversity is expected)
+- Strategic direction: DVH + PTV Gamma > global Gamma (clinically motivated)
+
+**Invalid (must re-establish on v2.3 data):**
+- All absolute metrics (MAE, Gamma %, D95 gap) — corrupted by PTV boundary artifact
+- Relative rankings between methods — artifact may affect architectures differently
+- DDPM conclusion (#27) — downgraded to PROVISIONAL (n=23, corrupted data)
+- The "D95 gap" numbers — dominated by the preprocessing artifact, not model error
 
 ### Phase 2 Utilities (added 2026-02-17)
 
@@ -252,6 +260,7 @@ Key items (see GitHub Issues with `phase/0-setup` label):
 **Goal:** Define what "good" means before training anything on the new dataset.
 
 Key items (see GitHub Issues with `phase/1-eval` label):
+- **Run baseline U-Net on v2.3 data** (#37) — validates pipeline end-to-end, establishes new baseline
 - Per-structure DVH compliance evaluation
 - PTV-region Gamma at multiple dose thresholds
 - Dose gradient/falloff analysis
@@ -321,7 +330,7 @@ Key decisions with rationale. Full decision records are closed GitHub Issues wit
 | 2026-02-13 | Shift primary metric from global Gamma to DVH + PTV Gamma + gradient realism | #26 (closed) |
 | 2026-01-21 | Dose prediction is semi-multi-modal (low-dose regions flexible) | See Strategic Direction |
 | 2026-01-21 | VGG perceptual loss not useful (improves MAE, NOT Gamma, 5x slower) | See What NOT to Pursue |
-| 2026-01-20 | DDPM not recommended (structural mismatch, no benefit) | #27 (closed) |
+| 2026-01-20 | DDPM deprioritized — PROVISIONAL (based on corrupted pilot data, revisit if Phase 2 plateaus) | #27 (reopened) |
 
 ---
 
