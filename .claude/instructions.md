@@ -44,18 +44,35 @@ Before doing any work, run through this checklist silently (do not narrate unles
 
 If any of the above reveals a discrepancy (e.g., issues closed but board not updated, new AI reviews not triaged), fix it before starting work.
 
-### End-of-Session Checklist (DO THIS LAST, EVERY SESSION)
+### GitHub Project Board = Primary Status Tracker
 
-**GitHub is the source of truth for project progress.** Detailed work logs go in GitHub (issue comments, commit messages), NOT in this file. This file stays lean — just enough to orient the next session.
+**The project board is the single source of truth for what's done, in progress, and planned.** Update it immediately — not at end of session — whenever issue status changes:
+
+- **Starting work on an issue?** Move it to "In Progress" on the board NOW.
+- **Finished an issue?** Close it AND move it to "Done" on the board NOW.
+- **Created a new issue?** Add it to the board with correct Phase and Status NOW.
+- **Discovered something is blocked?** Add the `status/blocked` label NOW.
+
+Do NOT batch board updates to end-of-session. Stale boards hide project state and create confusion.
+
+```bash
+# Board update reference (Status field: PVTSSF_lAHOAkj6uc4BP7oyzg-MoCc)
+# Todo=f75ad846, In Progress=47fc9ee4, Done=98236657
+# Phase field: PVTSSF_lAHOAkj6uc4BP7oyzg-Mtf0
+# Phase 0=e73b984f, Phase 1=9dcbf090, Phase 2=eacee063, Phase 3=fddd52ce, Backburner=c4c2f48d, Decision=7f44e30c
+gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-id "<FIELD_ID>" --single-select-option-id "<OPTION>"
+```
+
+### End-of-Session Checklist (DO THIS LAST, EVERY SESSION)
 
 Before the session ends, complete ALL of the following:
 
-1. **Update GitHub first (this is where the details go):**
-   - Close issues that were completed (with commit references)
-   - Add progress comments to open issues with specific findings/results
-   - Create issues for new tasks discovered during the session
-   - Update labels/milestones if needed
-   - Move project board items to correct status (Todo/In Progress/Done)
+1. **Verify GitHub is up to date:**
+   - All completed issues are closed (with commit references) and "Done" on board
+   - Progress comments added to open issues with specific findings/results
+   - New issues created for any tasks discovered during the session (added to board)
+   - Labels/milestones current
+   - **Board matches reality** — no item should be in a stale status
 2. **Update this file — BRIEFLY:**
    - Update "CURRENT STATE" date and blockers (2-3 lines max)
    - Add a 1-line session log entry pointing to commits/issues (see SESSION LOG format)
@@ -80,12 +97,6 @@ gh api graphql -f query='{ repository(owner:"wrockey",name:"vmat-diffusion") { d
 
 # Check project board state
 gh project item-list 2 --owner wrockey --format json --jq '.items[] | "\(.content.number // "draft") | \(.status) | \(.phase) | \(.title)"'
-
-# Update project board item status (need item ID and option ID)
-# Status options: Todo=f75ad846, In Progress=47fc9ee4, Done=98236657
-# Phase options: Phase 0=e73b984f, Phase 1=9dcbf090, Phase 2=eacee063, Phase 3=fddd52ce, Backburner=c4c2f48d, Decision=7f44e30c
-gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-id "PVTSSF_lAHOAkj6uc4BP7oyzg-MoCc" --single-select-option-id "<STATUS_OPTION>"
-gh project item-edit --project-id PVT_kwHOAkj6uc4BP7oy --id "<ITEM_ID>" --field-id "PVTSSF_lAHOAkj6uc4BP7oyzg-Mtf0" --single-select-option-id "<PHASE_OPTION>"
 ```
 
 ---
