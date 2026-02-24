@@ -249,16 +249,25 @@ class VMATDosePatchDataset(Dataset):
 # Baseline U-Net Model (No Time Embedding)
 # =============================================================================
 
+def _group_norm_num_groups(channels: int, preferred: int = 8) -> int:
+    """Find largest divisor of channels that is <= preferred, for GroupNorm."""
+    for g in range(preferred, 0, -1):
+        if channels % g == 0:
+            return g
+    return 1
+
+
 class ConvBlock3D(nn.Module):
     """3D convolution block with optional FiLM conditioning."""
-    
+
     def __init__(self, in_ch: int, out_ch: int, cond_dim: Optional[int] = None):
         super().__init__()
-        
+
+        num_groups = _group_norm_num_groups(out_ch)
         self.conv1 = nn.Conv3d(in_ch, out_ch, kernel_size=3, padding=1)
-        self.norm1 = nn.GroupNorm(8, out_ch)
+        self.norm1 = nn.GroupNorm(num_groups, out_ch)
         self.conv2 = nn.Conv3d(out_ch, out_ch, kernel_size=3, padding=1)
-        self.norm2 = nn.GroupNorm(8, out_ch)
+        self.norm2 = nn.GroupNorm(num_groups, out_ch)
         self.act = nn.SiLU()
         
         # Conditioning projection (FiLM)
@@ -1222,6 +1231,7 @@ class BaselineDosePredictor(pl.LightningModule):
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-2,
         rx_dose_gy: float = 70.0,
+        architecture: str = 'baseline',
         # Perceptual loss options
         use_gradient_loss: bool = False,
         gradient_loss_weight: float = 0.1,
@@ -1251,12 +1261,22 @@ class BaselineDosePredictor(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = BaselineUNet3D(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            base_channels=base_channels,
-            constraint_dim=constraint_dim,
-        )
+        if architecture == 'baseline':
+            self.model = BaselineUNet3D(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                base_channels=base_channels,
+                constraint_dim=constraint_dim,
+            )
+        else:
+            from architectures import build_model
+            self.model = build_model(
+                architecture=architecture,
+                in_channels=in_channels,
+                out_channels=out_channels,
+                base_channels=base_channels,
+                constraint_dim=constraint_dim,
+            )
 
         # Initialize perceptual loss modules
         self.gradient_loss = GradientLoss3D() if use_gradient_loss else None
@@ -1449,21 +1469,28 @@ class BaselineDosePredictor(pl.LightningModule):
         # Gaussian weighting
         gaussian = self._create_gaussian_weights(patch_size, device)
         
-        # Sliding window
+        # Sliding window — generate positions that guarantee full coverage
         stride = patch_size - overlap
+
+        def _axis_positions(length: int) -> list:
+            """Generate start positions along one axis ensuring full coverage."""
+            if length <= patch_size:
+                return [0]
+            starts = list(range(0, length - patch_size + 1, stride))
+            # Ensure the last position covers the volume end
+            if starts[-1] + patch_size < length:
+                starts.append(length - patch_size)
+            return starts
+
+        y_positions = _axis_positions(H)
+        x_positions = _axis_positions(W)
+        z_positions = _axis_positions(D)
+
         positions = []
-        
-        for y in range(0, H - patch_size + 1, stride):
-            for x in range(0, W - patch_size + 1, stride):
-                for z in range(0, D - patch_size + 1, stride):
+        for y in y_positions:
+            for x in x_positions:
+                for z in z_positions:
                     positions.append((y, x, z))
-        
-        # Add edge positions
-        for y in [0, H - patch_size]:
-            for x in [0, W - patch_size]:
-                for z in [0, D - patch_size]:
-                    if (y, x, z) not in positions:
-                        positions.append((y, x, z))
         
         if verbose:
             print(f"  Predicting {len(positions)} patches...")
@@ -1535,10 +1562,12 @@ class BaselineLoggingCallback(Callback):
         self.start_time = time.time()
         
         # Save config
+        arch_name = pl_module.hparams.get('architecture', 'baseline')
         config = {
             'script': 'train_baseline_unet.py',
             'version': SCRIPT_VERSION,
-            'model': 'BaselineUNet3D (Direct Regression)',
+            'architecture': arch_name,
+            'model': pl_module.model.__class__.__name__,
             'timestamp': datetime.now().isoformat(),
             'hparams': dict(pl_module.hparams),
             'model_params': sum(p.numel() for p in pl_module.parameters()),
@@ -1645,6 +1674,9 @@ def main():
     # Model
     parser.add_argument('--base_channels', type=int, default=48,
                        help='Base filter count (same as diffusion model)')
+    parser.add_argument('--architecture', type=str, default='baseline',
+                       choices=['baseline', 'attention_unet', 'bottleneck_attn'],
+                       help='Model architecture variant (default: baseline)')
     
     # Logging
     parser.add_argument('--log_dir', type=str, default='./runs')
@@ -1804,6 +1836,7 @@ def main():
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         rx_dose_gy=args.rx_dose_gy,
+        architecture=args.architecture,
         # Perceptual loss options
         use_gradient_loss=args.use_gradient_loss,
         gradient_loss_weight=args.gradient_loss_weight,
@@ -1832,7 +1865,8 @@ def main():
     )
 
     param_count = sum(p.numel() for p in model.parameters())
-    print(f"\nModel: BaselineUNet3D (Direct Regression)")
+    arch_desc = model.model.__class__.__name__
+    print(f"\nModel: {arch_desc} (architecture={args.architecture}, base_channels={args.base_channels})")
     print(f"Parameters: {param_count:,} ({param_count/1e6:.2f}M)")
 
     # Print loss configuration

@@ -33,14 +33,16 @@ from eval_statistics import NumpyEncoder
 def load_model(checkpoint_path: str, device: str = 'cuda') -> BaselineDosePredictor:
     """Load trained baseline model."""
     print(f"Loading model from {checkpoint_path}")
-    
+
     model = BaselineDosePredictor.load_from_checkpoint(checkpoint_path, map_location=device)
     model.eval()
     model.to(device)
-    
-    print(f"  Model: BaselineUNet3D (Direct Regression)")
+
+    arch_name = model.hparams.get('architecture', 'baseline')
+    model_class = model.model.__class__.__name__
+    print(f"  Model: {model_class} (architecture={arch_name})")
     print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
-    
+
     return model
 
 
@@ -92,6 +94,7 @@ def evaluate_single_case(
     rx_dose_gy: float = 70.0,
     compute_gamma_metric: bool = True,
     gamma_subsample: int = 2,
+    architecture: str = 'baseline',
 ) -> Dict:
     """Evaluate prediction against ground truth using centralized framework."""
     data = np.load(npz_path, allow_pickle=True)
@@ -115,6 +118,7 @@ def evaluate_single_case(
 
     result_dict = result.to_dict()
     result_dict['model_type'] = 'baseline_unet'
+    result_dict['architecture'] = architecture
     result_dict['timestamp'] = datetime.now().isoformat()
     return result_dict
 
@@ -139,7 +143,8 @@ def main():
     # Load model
     device = args.device if torch.cuda.is_available() else 'cpu'
     model = load_model(args.checkpoint, device)
-    
+    architecture = model.hparams.get('architecture', 'baseline')
+
     # Determine input files
     if args.input:
         input_files = [Path(args.input)]
@@ -184,6 +189,7 @@ def main():
                 rx_dose_gy=args.rx_dose_gy,
                 compute_gamma_metric=HAS_PYMEDPHYS,
                 gamma_subsample=args.gamma_subsample,
+                architecture=architecture,
             )
             all_results.append(results)
             
@@ -207,6 +213,7 @@ def main():
 
         summary = {
             'model_type': 'baseline_unet',
+            'architecture': architecture,
             'n_cases': len(all_results),
             'timestamp': datetime.now().isoformat(),
             'aggregate_metrics': {

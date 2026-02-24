@@ -352,7 +352,31 @@ Ideas to revisit only if the above plateaus. See GitHub for full list.
 | 9 | Full − Structure | Ablation |
 | 10 | Full − AsymPTV | Ablation |
 
-**Total: 10 conditions × 3 seeds = 30 training runs**
+**Loss ablation: 10 conditions × 3 seeds = 30 training runs**
+
+#### Amendment 1: Architecture Comparison (2026-02-24, pre-results)
+
+> **Rationale (non-results-based):** Architecture is a confound — loss engineering improvements could be complementary to, or redundant with, architectural improvements. Adding architecture conditions answers this before it becomes an uncontrolled variable. This amendment was committed before observing any v2.3 experiment results (only pipeline validation seed 42 was run, which is not part of the ablation study).
+
+| # | Condition | Architecture | Loss | Purpose |
+|---|-----------|-------------|------|---------|
+| 11 | AttentionUNet + MSE | AttentionUNet3D | MSE only | Architecture-only comparison vs C1 |
+| 12 | AttentionUNet + Full | AttentionUNet3D | Full combined + UW | Best arch × best loss vs C6 |
+| 13 | BottleneckAttn + MSE | BottleneckAttnUNet3D | MSE only | Architecture-only comparison vs C1 |
+| 14 | BottleneckAttn + Full | BottleneckAttnUNet3D | Full combined + UW | Best arch × best loss vs C6 |
+| 15 | WiderBaseline + MSE | BaselineUNet3D (bc=50) | MSE only | Parameter-matched control |
+| 16 | WiderBaseline + Full | BaselineUNet3D (bc=50) | Full combined + UW | Parameter-matched control |
+
+**Architecture conditions: 6 conditions × 3 seeds = 18 training runs**
+
+**Architecture variants:**
+- **AttentionUNet3D** (Oktay et al., 2018): Attention gates at all 4 skip connections. ~5-8% parameter increase.
+- **BottleneckAttnUNet3D**: Multi-head self-attention at bottleneck only (8×8×8 = 512 tokens). ~2-3% parameter increase.
+- **WiderBaseline** (bc=50): Parameter-matched control. No code changes — just `--base_channels 50`.
+
+**Why MSE + Full only (not all 10 loss variants):** MSE gives clean architecture-only comparison (C1 vs C11 vs C13 vs C15). Full combined gives "best of both" comparison (C6 vs C12 vs C14 vs C16). Full factorial (3 × 10 = 30 extra × 3 seeds = 90 runs) is compute-prohibitive.
+
+**Updated total: 16 conditions × 3 seeds = 48 training runs (~624 GPU-hours)**
 
 ### Metrics (pre-registered)
 
@@ -388,7 +412,12 @@ Ideas to revisit only if the above plateaus. See GitHub for full list.
 3. **Multiple comparison correction:** Holm-Bonferroni step-down (9 comparisons vs baseline). More powerful than Bonferroni, same FWER guarantee.
 4. **Effect size:** Cohen's d (paired) for each comparison
 5. **Ablation analysis:** Full combined vs each remove-one variant (4 paired tests, Holm-Bonferroni-corrected)
-6. **Power note:** With n=~16 and Holm-Bonferroni, the study has limited power for small effects. If effect size < 2× std, consider 5-seed runs (seeds 42, 123, 456, 789, 1024).
+6. **Family 2 (architecture, separate from loss Family 1):**
+   - 6 tests vs baseline: C11/C13/C15 vs C1 (MSE), C12/C14/C16 vs C6 (Full)
+   - 4 attention-vs-control tests: C11/C13 vs C15 (MSE), C12/C14 vs C16 (Full)
+   - Total: 10 tests, Holm-Bonferroni corrected within family (separate from loss family)
+   - Exploratory: 2-way interaction (architecture × loss type)
+7. **Power note:** With n=~16 and Holm-Bonferroni, the study has limited power for small effects. If effect size < 2× std, consider 5-seed runs (seeds 42, 123, 456, 789, 1024).
 
 ### Cross-Institutional Validation
 
@@ -408,6 +437,9 @@ These decisions are made NOW, before seeing results:
 | No condition beats baseline significantly | Report as negative result — still publishable as "loss engineering does not help beyond MSE for this dataset" |
 | One individual loss component (e.g., +Gradient alone) matches or beats full combined | Report as finding — simpler is better |
 | Cross-institutional performance drops > 20% relative | Report as limitation, discuss generalizability |
+| Attention variant beats baseline AND beats wider control | Attention mechanism contributes; report as finding |
+| Attention variant beats baseline but NOT wider control | Capacity, not attention; report honestly |
+| No architecture variant beats baseline | Architecture is not the bottleneck; loss engineering sufficient |
 
 ### Deviations from Plan
 
