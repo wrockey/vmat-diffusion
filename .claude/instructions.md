@@ -465,7 +465,7 @@ Reverse chronological. **One line per session** — just enough to orient the ne
 
 Format: `YYYY-MM-DD — <summary>. Commits: <hashes>. Issues: <numbers>.`
 
-- **2026-02-23** — Centralized evaluation framework: 4 new modules (`eval_core`, `eval_clinical`, `eval_metrics`, `eval_statistics`), migrated 7 scripts, fixed D95/gamma/Bowel-V45/Dmax bugs, corrected stats methodology (per-case Wilcoxon, Holm-Bonferroni). Issues: #6 #7 closed. Pre-registered analysis plan amended (stats corrections).
+- **2026-02-23** — Centralized evaluation framework: 4 new modules (`eval_core`, `eval_clinical`, `eval_metrics`, `eval_statistics`), migrated 7 scripts, fixed D95/gamma/Bowel-V45/Dmax bugs, corrected stats methodology (per-case Wilcoxon, Holm-Bonferroni). Commit: `722551b`. Issues: #6 #7 closed, #9 #37 updated. Pre-registered analysis plan amended (stats corrections).
 - **2026-02-23** — Project foundation overhaul: pre-registered analysis plan, 2-institution study design (~161 SIB cases), augmentation (rotation+noise), experiment protocol rewrite (multi-seed, standard figures, stats). Flagged all pilot metrics as invalid. Commits: `1f64172`..`75dde9a`. Issues: #27 reopened (DDPM provisional), #37-47 created, #42 #44 closed.
 - **2026-02-23** — Processed 74/76 cases, expanded OAR mapping, board cleanup. Commits: `fa81a3a`..`1f64172`. Issues: #4 closed+verified, #3 updated, #30 dup, #35 #36 created.
 - **2026-02-23** — GitHub project board setup, AI review workflow, triaged Grok review. Issues: #29-34.
