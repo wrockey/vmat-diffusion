@@ -164,9 +164,9 @@ def select_representative_case(eval_data: dict, override_case: str = None) -> st
     if not cases:
         return ''
 
-    # Sort by MAE, pick median
+    # Sort by MAE, pick case just below median (avoids showing worst-case artifacts)
     sorted_cases = sorted(cases, key=lambda c: c['dose_metrics']['mae_gy'])
-    median_idx = len(sorted_cases) // 2
+    median_idx = max(0, len(sorted_cases) // 2 - 1)
     return sorted_cases[median_idx]['case_id']
 
 
