@@ -104,9 +104,10 @@ class UncertaintyWeightedLoss(nn.Module):
                 continue
 
             log_sigma = self.log_sigmas[name]
-            sigma = torch.exp(log_sigma)
+            sigma = torch.exp(log_sigma).clamp(min=self.min_sigma)
 
-            # Uncertainty-weighted term
+            # Uncertainty-weighted term (Kendall 2018: L/(2σ²) + log(σ))
+            # Use clamped sigma for stability but original log_sigma for regularization
             weighted = loss_val / (2 * sigma ** 2) + log_sigma
 
             total_loss = total_loss + weighted

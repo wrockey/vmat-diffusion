@@ -1376,7 +1376,10 @@ class BaselineDosePredictor(pl.LightningModule):
 
         if self.vgg_loss is not None:
             vgg_loss = self.vgg_loss(pred_dose, dose)
-            raw_losses["vgg"] = vgg_loss
+            # VGG excluded from uncertainty weighting (deprioritized, not in uw_names).
+            # Only add to raw_losses for manual weighting path.
+            if self.uncertainty_loss is None:
+                raw_losses["vgg"] = vgg_loss
             self.log('train/vgg_loss', vgg_loss, on_step=False, on_epoch=True)
 
         if self.dvh_loss is not None:
@@ -1576,10 +1579,23 @@ class BaselineDosePredictor(pl.LightningModule):
         return gaussian_3d.unsqueeze(0).unsqueeze(0)
     
     def configure_optimizers(self):
+        # Separate parameter groups: no weight decay on learned log_sigma params
+        # (Kendall 2018 uses no regularization on uncertainty parameters;
+        # weight decay biases sigmas toward 1.0, distorting learned equilibrium)
+        if self.uncertainty_loss is not None:
+            uw_params = list(self.uncertainty_loss.parameters())
+            uw_ids = {id(p) for p in uw_params}
+            model_params = [p for p in self.parameters() if id(p) not in uw_ids]
+            param_groups = [
+                {"params": model_params, "weight_decay": self.hparams.weight_decay},
+                {"params": uw_params, "weight_decay": 0.0},
+            ]
+        else:
+            param_groups = [{"params": self.parameters(), "weight_decay": self.hparams.weight_decay}]
+
         optimizer = torch.optim.AdamW(
-            self.parameters(),
+            param_groups,
             lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
         )
         
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

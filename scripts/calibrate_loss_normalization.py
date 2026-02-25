@@ -38,13 +38,8 @@ from train_baseline_unet import (
 
 # =============================================================================
 # LOSS FUNCTIONS — real implementations imported from train_baseline_unet.py
+# Instantiated inside main() to use CLI rx_dose_gy argument.
 # =============================================================================
-
-# Instantiate loss modules (will be moved to device in main())
-_gradient_loss = GradientLoss3D()
-_dvh_loss = DVHAwareLoss(rx_dose_gy=70.0)
-_structure_weighted_loss = StructureWeightedLoss()
-_asymmetric_ptv_loss = AsymmetricPTVLoss(rx_dose_gy=70.0)
 
 
 # =============================================================================
@@ -62,7 +57,6 @@ def load_sample(npz_path: Path) -> Dict[str, torch.Tensor]:
     ct = torch.from_numpy(data['ct']).float()                        # (H, W, D)
     dose = torch.from_numpy(data['dose']).float()                    # (H, W, D)
     masks_sdf = torch.from_numpy(data['masks_sdf']).float()          # (8, H, W, D)
-    constraints = torch.from_numpy(data['constraints']).float()      # (13,)
 
     # Build condition tensor: CT (1 ch) + SDFs (8 ch) = 9 channels
     condition = torch.cat([ct.unsqueeze(0), masks_sdf], dim=0)       # (9, H, W, D)
@@ -70,12 +64,10 @@ def load_sample(npz_path: Path) -> Dict[str, torch.Tensor]:
     # Add batch dimension
     dose = dose.unsqueeze(0).unsqueeze(0)          # (1, 1, H, W, D)
     condition = condition.unsqueeze(0)              # (1, 9, H, W, D)
-    constraints = constraints.unsqueeze(0)          # (1, 13)
 
     return {
         "dose": dose,
         "condition": condition,
-        "constraints": constraints,
     }
 
 
@@ -124,11 +116,11 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Move loss modules to device
-    _gradient_loss.to(device)
-    _dvh_loss.to(device)
-    _structure_weighted_loss.to(device)
-    _asymmetric_ptv_loss.to(device)
+    # Instantiate loss modules with CLI rx_dose_gy (Fix: was hard-coded at module level)
+    gradient_loss = GradientLoss3D().to(device)
+    dvh_loss = DVHAwareLoss(rx_dose_gy=args.rx_dose_gy).to(device)
+    structure_weighted_loss = StructureWeightedLoss().to(device)
+    asymmetric_ptv_loss = AsymmetricPTVLoss(rx_dose_gy=args.rx_dose_gy).to(device)
 
     for f in selected_files:
         sample = load_sample(f)
@@ -138,31 +130,50 @@ def main():
         # Simulate untrained model output: GT + Gaussian noise
         pred = target + torch.randn_like(target) * noise_std_normalized
 
-        # Use a random 128^3 patch to match training (full volume may OOM)
+        # Extract 128^3 patch centered on PTV70 centroid (SDF channel 1, where SDF < 0 = inside)
+        # This ensures DVH and asymmetric losses see actual PTV anatomy, not empty space.
         H, W, D = target.shape[2:]
         ph, pw, pd = min(128, H), min(128, W), min(128, D)
-        sy = (H - ph) // 2
-        sx = (W - pw) // 2
-        sz = (D - pd) // 2
+
+        ptv_sdf = condition[0, 1]  # PTV70 SDF: (H, W, D)
+        ptv_mask = ptv_sdf < 0
+        if ptv_mask.any():
+            coords = torch.nonzero(ptv_mask)  # (N, 3)
+            centroid = coords.float().mean(dim=0).long()
+            sy = max(0, min(centroid[0].item() - ph // 2, H - ph))
+            sx = max(0, min(centroid[1].item() - pw // 2, W - pw))
+            sz = max(0, min(centroid[2].item() - pd // 2, D - pd))
+        else:
+            # Fallback to center crop if PTV not found
+            sy = (H - ph) // 2
+            sx = (W - pw) // 2
+            sz = (D - pd) // 2
+            print(f"    [WARN] No PTV70 voxels found in {f.name}, using center crop")
+
         pred_p = pred[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
         target_p = target[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
         condition_p = condition[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
+
+        # Sanity check: count PTV voxels in patch
+        ptv_in_patch = (condition_p[0, 1] < 0).sum().item()
+        if ptv_in_patch < 100:
+            print(f"    [WARN] Only {ptv_in_patch} PTV voxels in patch for {f.name}")
 
         with torch.no_grad():
             # Base loss: MSE
             base = F.mse_loss(pred_p, target_p)
 
             # Gradient loss
-            grad = _gradient_loss(pred_p, target_p)
+            grad = gradient_loss(pred_p, target_p)
 
             # Structure-weighted loss (returns loss, metrics_dict)
-            struct, _ = _structure_weighted_loss(pred_p, target_p, condition_p)
+            struct, _ = structure_weighted_loss(pred_p, target_p, condition_p)
 
             # Asymmetric PTV loss (returns loss, metrics_dict)
-            asym, _ = _asymmetric_ptv_loss(pred_p, target_p, condition_p)
+            asym, _ = asymmetric_ptv_loss(pred_p, target_p, condition_p)
 
             # DVH-aware loss (returns loss, metrics_dict)
-            dvh, _ = _dvh_loss(pred_p, target_p, condition_p)
+            dvh, _ = dvh_loss(pred_p, target_p, condition_p)
 
             component_losses = {
                 "base": base,
@@ -176,15 +187,20 @@ def main():
             loss_sums[name] += val.item()
         count += 1
 
-        print(f"  [{count}/{len(selected_files)}] {f.name}")
+        print(f"  [{count}/{len(selected_files)}] {f.name} (PTV voxels: {ptv_in_patch})")
 
     # Average losses
     avg_losses = {name: loss_sums[name] / count for name in loss_sums}
 
     # Recommended initial_log_sigma = log(sqrt(avg))
-    # This makes the weighted term start at ~0.5 + log(sqrt(avg))
+    # This makes the data-fit term L/(2*sigma^2) start at ~0.5 for all components.
+    # The regularization term log(sigma) will vary across components.
+    # Clamp avg to [1e-4, 1e4] to prevent extreme sigma values that could
+    # cause gradient explosion (tiny avg → huge weight) or effective silencing.
+    MIN_AVG_LOSS = 1e-4
+    MAX_AVG_LOSS = 1e4
     recommendations = {
-        name: float(np.log(np.sqrt(avg))) if avg > 0 else 0.0
+        name: float(np.log(np.sqrt(np.clip(avg, MIN_AVG_LOSS, MAX_AVG_LOSS)))) if avg > 0 else 0.0
         for name, avg in avg_losses.items()
     }
 
