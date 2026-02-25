@@ -1257,6 +1257,9 @@ class BaselineDosePredictor(pl.LightningModule):
         asymmetric_ptv_weight: float = 1.0,
         asymmetric_underdose_weight: float = 3.0,
         asymmetric_overdose_weight: float = 1.0,
+        # Uncertainty weighting (Kendall 2018) — Phase 2 combined loss
+        use_uncertainty_weighting: bool = False,
+        calibration_json: str = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -1307,6 +1310,39 @@ class BaselineDosePredictor(pl.LightningModule):
             rx_dose_gy=rx_dose_gy,
         ) if use_asymmetric_ptv else None
 
+        # Uncertainty weighting for combined loss (Phase 2)
+        self.uncertainty_loss = None
+        if use_uncertainty_weighting:
+            from uncertainty_loss import UncertaintyWeightedLoss
+
+            # Determine which loss components are active
+            uw_names = ["base"]  # MSE is always present
+            if use_gradient_loss:
+                uw_names.append("gradient")
+            if use_dvh_loss:
+                uw_names.append("dvh")
+            if use_structure_weighted:
+                uw_names.append("structure")
+            if use_asymmetric_ptv:
+                uw_names.append("asymmetric")
+
+            # Load calibrated initial_log_sigma if provided
+            initial_log_sigmas = None
+            if calibration_json:
+                import json as _json
+                calib_path = Path(calibration_json)
+                if calib_path.exists():
+                    calib = _json.loads(calib_path.read_text())
+                    initial_log_sigmas = calib.get("recommended_initial_log_sigma", None)
+                    print(f"  Loaded calibration from {calib_path}")
+                else:
+                    print(f"  [WARN] Calibration JSON not found: {calib_path}")
+
+            self.uncertainty_loss = UncertaintyWeightedLoss(
+                loss_names=uw_names,
+                initial_log_sigmas=initial_log_sigmas,
+            )
+
         self.validation_step_outputs = []
     
     def forward(self, condition: torch.Tensor, constraints: torch.Tensor) -> torch.Tensor:
@@ -1323,54 +1359,70 @@ class BaselineDosePredictor(pl.LightningModule):
         # Primary loss: MSE on dose
         mse_loss = F.mse_loss(pred_dose, dose)
 
-        # Physics penalty (negative dose)
+        # Physics penalty (negative dose) — always applied, not uncertainty-weighted
         negative_penalty = F.relu(-pred_dose).mean()
-
-        # Combine losses
-        total_loss = mse_loss + 0.1 * negative_penalty
 
         # Log base losses
         self.log('train/mse_loss', mse_loss, on_step=False, on_epoch=True)
         self.log('train/neg_penalty', negative_penalty, on_step=False, on_epoch=True)
 
-        # Optional: Gradient loss
+        # Compute all active loss components
+        raw_losses = {"base": mse_loss}
+
         if self.gradient_loss is not None:
             grad_loss = self.gradient_loss(pred_dose, dose)
-            total_loss = total_loss + self.hparams.gradient_loss_weight * grad_loss
+            raw_losses["gradient"] = grad_loss
             self.log('train/grad_loss', grad_loss, on_step=False, on_epoch=True)
 
-        # Optional: VGG perceptual loss
         if self.vgg_loss is not None:
             vgg_loss = self.vgg_loss(pred_dose, dose)
-            total_loss = total_loss + self.hparams.vgg_loss_weight * vgg_loss
+            raw_losses["vgg"] = vgg_loss
             self.log('train/vgg_loss', vgg_loss, on_step=False, on_epoch=True)
 
-        # Optional: DVH-aware loss
         if self.dvh_loss is not None:
             dvh_loss, dvh_metrics = self.dvh_loss(pred_dose, dose, condition)
-            total_loss = total_loss + self.hparams.dvh_loss_weight * dvh_loss
+            raw_losses["dvh"] = dvh_loss
             self.log('train/dvh_loss', dvh_loss, on_step=False, on_epoch=True)
-            # Log individual DVH metrics
             for metric_name, metric_value in dvh_metrics.items():
                 self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
 
-        # Optional: Structure-weighted loss
         if self.structure_weighted_loss is not None:
             struct_loss, struct_metrics = self.structure_weighted_loss(pred_dose, dose, condition)
-            total_loss = total_loss + self.hparams.structure_weighted_weight * struct_loss
+            raw_losses["structure"] = struct_loss
             self.log('train/struct_weighted_loss', struct_loss, on_step=False, on_epoch=True)
-            # Log individual structure metrics
             for metric_name, metric_value in struct_metrics.items():
                 self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
 
-        # Optional: Asymmetric PTV loss (penalizes underdosing more)
         if self.asymmetric_ptv_loss is not None:
             asym_loss, asym_metrics = self.asymmetric_ptv_loss(pred_dose, dose, condition)
-            total_loss = total_loss + self.hparams.asymmetric_ptv_weight * asym_loss
+            raw_losses["asymmetric"] = asym_loss
             self.log('train/asym_ptv_loss', asym_loss, on_step=False, on_epoch=True)
-            # Log individual asymmetric PTV metrics
             for metric_name, metric_value in asym_metrics.items():
                 self.log(f'train/{metric_name}', metric_value, on_step=False, on_epoch=True)
+
+        # Combine losses
+        if self.uncertainty_loss is not None:
+            # Phase 2: Uncertainty-weighted combination (Kendall 2018)
+            uw_result = self.uncertainty_loss(raw_losses)
+            total_loss = uw_result["loss"] + 0.1 * negative_penalty
+
+            # Log learned sigmas and weighted contributions
+            for name in self.uncertainty_loss.loss_names:
+                self.log(f'train/sigma_{name}', uw_result[f'sigma_{name}'], on_step=False, on_epoch=True)
+                self.log(f'train/weighted_{name}', uw_result[f'weighted_{name}'], on_step=False, on_epoch=True)
+        else:
+            # Manual weighting (baseline / single-loss experiments)
+            total_loss = mse_loss + 0.1 * negative_penalty
+            if "gradient" in raw_losses:
+                total_loss = total_loss + self.hparams.gradient_loss_weight * raw_losses["gradient"]
+            if "vgg" in raw_losses:
+                total_loss = total_loss + self.hparams.vgg_loss_weight * raw_losses["vgg"]
+            if "dvh" in raw_losses:
+                total_loss = total_loss + self.hparams.dvh_loss_weight * raw_losses["dvh"]
+            if "structure" in raw_losses:
+                total_loss = total_loss + self.hparams.structure_weighted_weight * raw_losses["structure"]
+            if "asymmetric" in raw_losses:
+                total_loss = total_loss + self.hparams.asymmetric_ptv_weight * raw_losses["asymmetric"]
 
         self.log('train/loss', total_loss, prog_bar=True, on_step=True, on_epoch=True)
 
@@ -1692,6 +1744,8 @@ def main():
                         help='Auto-resume from last.ckpt if it exists (power outage recovery)')
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='Explicit checkpoint path to resume from')
+    parser.add_argument('--no_augmentation', action='store_true',
+                        help='Disable training augmentations (for ablation study)')
 
     # Perceptual loss options
     parser.add_argument('--use_gradient_loss', action='store_true',
@@ -1742,6 +1796,12 @@ def main():
                         help='Weight for PTV underdosing (pred < target) (default: 3.0)')
     parser.add_argument('--asymmetric_overdose_weight', type=float, default=1.0,
                         help='Weight for PTV overdosing (pred > target) (default: 1.0)')
+
+    # Uncertainty weighting (Phase 2 combined loss)
+    parser.add_argument('--use_uncertainty_weighting', action='store_true',
+                        help='Enable learned uncertainty weighting (Kendall 2018) for all loss components')
+    parser.add_argument('--calibration_json', type=str, default=None,
+                        help='Path to loss_normalization_calib.json for initial_log_sigma values')
 
     args = parser.parse_args()
 
@@ -1799,7 +1859,7 @@ def main():
         data_dir=args.data_dir,
         patch_size=args.patch_size,
         patches_per_volume=args.patches_per_volume,
-        augment=True,
+        augment=not args.no_augmentation,
         mode='train',
     )
     train_dataset.files = [Path(f) for f in train_files]
@@ -1866,6 +1926,9 @@ def main():
         asymmetric_ptv_weight=args.asymmetric_ptv_weight,
         asymmetric_underdose_weight=args.asymmetric_underdose_weight,
         asymmetric_overdose_weight=args.asymmetric_overdose_weight,
+        # Uncertainty weighting (Phase 2)
+        use_uncertainty_weighting=args.use_uncertainty_weighting,
+        calibration_json=args.calibration_json,
     )
 
     param_count = sum(p.numel() for p in model.parameters())
@@ -1873,7 +1936,8 @@ def main():
     print(f"\nModel: {arch_desc} (architecture={args.architecture}, base_channels={args.base_channels})")
     print(f"Parameters: {param_count:,} ({param_count/1e6:.2f}M)")
 
-    # Print loss configuration
+    # Print augmentation and loss configuration
+    print(f"\nAugmentation: {'DISABLED' if args.no_augmentation else 'enabled'}")
     print("\nLoss configuration:")
     print(f"  MSE loss: weight=1.0")
     print(f"  Negative penalty: weight=0.1")
@@ -1892,6 +1956,13 @@ def main():
     if args.use_asymmetric_ptv:
         print(f"  Asymmetric PTV loss: weight={args.asymmetric_ptv_weight}")
         print(f"    Underdose penalty: {args.asymmetric_underdose_weight}x, Overdose penalty: {args.asymmetric_overdose_weight}x")
+    if args.use_uncertainty_weighting:
+        print(f"  Uncertainty weighting: ENABLED (Kendall 2018)")
+        print(f"    Manual weights ignored — learned σ per component")
+        if args.calibration_json:
+            print(f"    Calibration: {args.calibration_json}")
+        else:
+            print(f"    Calibration: None (using default initial_log_sigma=0.0)")
 
     # Callbacks
     callbacks = [

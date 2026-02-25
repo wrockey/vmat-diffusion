@@ -13,7 +13,8 @@ Usage:
     # In LightningModule.__init__:
     self.uncertainty_loss = UncertaintyWeightedLoss(
         loss_names=["base", "gradient", "structure", "asymmetric", "dvh"],
-        initial_log_sigma=0.0
+        initial_log_sigma=0.0,  # global default
+        initial_log_sigmas={"base": -1.5, "dvh": 0.3},  # per-component (from calibration)
     )
 
     # In training_step:
@@ -59,6 +60,7 @@ class UncertaintyWeightedLoss(nn.Module):
         self,
         loss_names: List[str],
         initial_log_sigma: float = 0.0,   # start with equal weighting
+        initial_log_sigmas: Dict[str, float] = None,  # per-component overrides
         min_sigma: float = 1e-4
     ):
         super().__init__()
@@ -66,8 +68,13 @@ class UncertaintyWeightedLoss(nn.Module):
         self.min_sigma = min_sigma
 
         # Learnable log(σ) per loss (keeps σ > 0)
+        # Per-component values override the global default
         self.log_sigmas = nn.ParameterDict({
-            name: nn.Parameter(torch.tensor(initial_log_sigma, dtype=torch.float32))
+            name: nn.Parameter(torch.tensor(
+                initial_log_sigmas.get(name, initial_log_sigma)
+                if initial_log_sigmas else initial_log_sigma,
+                dtype=torch.float32
+            ))
             for name in loss_names
         })
 

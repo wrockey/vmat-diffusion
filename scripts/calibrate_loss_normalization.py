@@ -14,72 +14,37 @@ Run example:
         --data_dir /path/to/processed_npz \
         --num_samples 12
 
-Phase 2 integration TODO:
-    Replace the stub loss functions below with imports from
-    train_baseline_unet.py. The stubs are placeholders to show the
-    expected interface; the real losses are already implemented and
-    tested in the pilot experiments.
-
 Attribution: Initial implementation by Grok (external review, 2026-02-17),
-             reviewed and saved by Claude. Stubs to be replaced with real
-             loss functions during Phase 2 setup.
+             reviewed and integrated by Claude. Stubs replaced with real
+             loss imports from train_baseline_unet.py (2026-02-25).
 """
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 import argparse
 import json
 from typing import Dict
 
+# Import real loss implementations from training script
+from train_baseline_unet import (
+    GradientLoss3D,
+    DVHAwareLoss,
+    StructureWeightedLoss,
+    AsymmetricPTVLoss,
+)
+
 
 # =============================================================================
-# LOSS FUNCTIONS — STUBS (replace with real implementations from training script)
-#
-# Phase 2 TODO: Replace these with imports from train_baseline_unet.py:
-#   - base_loss -> F.mse_loss (or F.l1_loss)
-#   - gradient_loss -> GradientLoss3D (lines ~420-470 in train_baseline_unet.py)
-#   - structure_weighted_loss -> StructureWeightedLoss (lines ~600+ in train_baseline_unet.py)
-#   - asymmetric_ptv_loss -> AsymmetricPTVLoss (lines ~730+ in train_baseline_unet.py)
-#   - dvh_aware_loss -> DVHAwareLoss (lines ~500-600 in train_baseline_unet.py)
-#
-# These stubs produce plausible scalar values for testing the calibration
-# pipeline itself, but they are NOT the real loss functions.
+# LOSS FUNCTIONS — real implementations imported from train_baseline_unet.py
 # =============================================================================
 
-def base_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """L1 or MSE — replace with your actual base loss."""
-    return torch.nn.functional.mse_loss(pred, target, reduction="mean")
-
-
-def gradient_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """3D Sobel gradient loss — STUB, replace with GradientLoss3D."""
-    diff = torch.abs(torch.diff(pred, dim=-1)) - torch.abs(torch.diff(target, dim=-1))
-    return torch.mean(torch.abs(diff))
-
-
-def structure_weighted_loss(
-    pred: torch.Tensor, target: torch.Tensor, masks: torch.Tensor
-) -> torch.Tensor:
-    """Structure-weighted loss — STUB, replace with StructureWeightedLoss."""
-    weights = torch.mean(masks, dim=(1, 2, 3), keepdim=True) + 1e-5
-    weights = weights / weights.sum()
-    return torch.mean(weights * torch.abs(pred - target))
-
-
-def asymmetric_ptv_loss(
-    pred: torch.Tensor, target: torch.Tensor, ptv_mask: torch.Tensor
-) -> torch.Tensor:
-    """Asymmetric PTV loss — STUB, replace with AsymmetricPTVLoss."""
-    error = pred - target
-    under = torch.where(error < 0, torch.abs(error), torch.tensor(0.0, device=error.device))
-    over = torch.where(error > 0, error, torch.tensor(0.0, device=error.device))
-    return torch.mean(under * 2.0 + over * 0.5) * ptv_mask.float().mean()
-
-
-def dvh_aware_loss(pred: torch.Tensor, constraints: torch.Tensor) -> torch.Tensor:
-    """DVH-aware loss — STUB, replace with DVHAwareLoss."""
-    return torch.mean(torch.abs(pred.mean(dim=(1, 2, 3)) - constraints[:5]))
+# Instantiate loss modules (will be moved to device in main())
+_gradient_loss = GradientLoss3D()
+_dvh_loss = DVHAwareLoss(rx_dose_gy=70.0)
+_structure_weighted_loss = StructureWeightedLoss()
+_asymmetric_ptv_loss = AsymmetricPTVLoss(rx_dose_gy=70.0)
 
 
 # =============================================================================
@@ -87,22 +52,30 @@ def dvh_aware_loss(pred: torch.Tensor, constraints: torch.Tensor) -> torch.Tenso
 # =============================================================================
 
 def load_sample(npz_path: Path) -> Dict[str, torch.Tensor]:
-    """Load a single .npz file in the v2.2.0 format."""
+    """Load a single .npz file and build tensors matching training format.
+
+    Returns tensors with batch dimension (B=1) for compatibility with loss functions.
+    The condition tensor is (1, 9, H, W, D) = CT + 8 SDF channels.
+    """
     data = np.load(npz_path, allow_pickle=True)
 
-    # NPZ v2.2.0 format: dose is (H, W, D), masks is (8, H, W, D)
-    dose = torch.from_numpy(data['dose']).unsqueeze(0).float()       # (1, H, W, D)
-    masks = torch.from_numpy(data['masks']).float()                  # (8, H, W, D)
+    ct = torch.from_numpy(data['ct']).float()                        # (H, W, D)
+    dose = torch.from_numpy(data['dose']).float()                    # (H, W, D)
+    masks_sdf = torch.from_numpy(data['masks_sdf']).float()          # (8, H, W, D)
     constraints = torch.from_numpy(data['constraints']).float()      # (13,)
 
-    # PTV70 mask is channel 0
-    ptv_mask = masks[0]
+    # Build condition tensor: CT (1 ch) + SDFs (8 ch) = 9 channels
+    condition = torch.cat([ct.unsqueeze(0), masks_sdf], dim=0)       # (9, H, W, D)
+
+    # Add batch dimension
+    dose = dose.unsqueeze(0).unsqueeze(0)          # (1, 1, H, W, D)
+    condition = condition.unsqueeze(0)              # (1, 9, H, W, D)
+    constraints = constraints.unsqueeze(0)          # (1, 13)
 
     return {
         "dose": dose,
-        "masks": masks,
+        "condition": condition,
         "constraints": constraints,
-        "ptv_mask": ptv_mask,
     }
 
 
@@ -149,27 +122,54 @@ def main():
     }
     count = 0
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Move loss modules to device
+    _gradient_loss.to(device)
+    _dvh_loss.to(device)
+    _structure_weighted_loss.to(device)
+    _asymmetric_ptv_loss.to(device)
+
     for f in selected_files:
         sample = load_sample(f)
-        target = sample["dose"]
+        target = sample["dose"].to(device)           # (1, 1, H, W, D)
+        condition = sample["condition"].to(device)    # (1, 9, H, W, D)
 
         # Simulate untrained model output: GT + Gaussian noise
         pred = target + torch.randn_like(target) * noise_std_normalized
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        pred = pred.to(device)
-        target = target.to(device)
-        masks = sample["masks"].to(device)
-        ptv_mask = sample["ptv_mask"].to(device)
-        constraints = sample["constraints"].to(device)
+        # Use a random 128^3 patch to match training (full volume may OOM)
+        H, W, D = target.shape[2:]
+        ph, pw, pd = min(128, H), min(128, W), min(128, D)
+        sy = (H - ph) // 2
+        sx = (W - pw) // 2
+        sz = (D - pd) // 2
+        pred_p = pred[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
+        target_p = target[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
+        condition_p = condition[:, :, sy:sy+ph, sx:sx+pw, sz:sz+pd]
 
         with torch.no_grad():
+            # Base loss: MSE
+            base = F.mse_loss(pred_p, target_p)
+
+            # Gradient loss
+            grad = _gradient_loss(pred_p, target_p)
+
+            # Structure-weighted loss (returns loss, metrics_dict)
+            struct, _ = _structure_weighted_loss(pred_p, target_p, condition_p)
+
+            # Asymmetric PTV loss (returns loss, metrics_dict)
+            asym, _ = _asymmetric_ptv_loss(pred_p, target_p, condition_p)
+
+            # DVH-aware loss (returns loss, metrics_dict)
+            dvh, _ = _dvh_loss(pred_p, target_p, condition_p)
+
             component_losses = {
-                "base":       base_loss(pred, target),
-                "gradient":   gradient_loss(pred, target),
-                "structure":  structure_weighted_loss(pred, target, masks),
-                "asymmetric": asymmetric_ptv_loss(pred, target, ptv_mask),
-                "dvh":        dvh_aware_loss(pred, constraints),
+                "base": base,
+                "gradient": grad,
+                "structure": struct,
+                "asymmetric": asym,
+                "dvh": dvh,
             }
 
         for name, val in component_losses.items():
