@@ -13,7 +13,16 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 | Date | ID | Git Hash | Notebook | Model | MAE (Gy) | Gamma 3%/3mm | PTV70 D95 Gap | Status |
 |------|-----|----------|----------|-------|----------|--------------|---------------|--------|
-| 2026-02-24 | baseline_v23 | `82bddc5` | [notebook](2026-02-24_baseline_v23_preliminary.ipynb) | BaselineUNet3D | 4.80 ± 2.45 (test) | 28.1 ± 12.6% (global), 85.5 ± 10.9% (PTV) | -0.86 ± 0.92 Gy | Preliminary (seed 42 only) |
+| 2026-02-24 | baseline_v23 (seed42) | `82bddc5` | [notebook](2026-02-24_baseline_v23_preliminary.ipynb) | BaselineUNet3D | 4.80 ± 2.45 (test, n=7) | 28.1 ± 12.6% (global), 85.5 ± 10.9% (PTV) | -0.86 ± 0.92 Gy | Preliminary |
+| 2026-02-25 | baseline_v23 (seed123) | `c2454b8` | — | BaselineUNet3D | 4.33 ± 2.47 (test, n=7) | 34.3 ± 9.3% (global), 74.6 ± 10.7% (PTV) | -1.99 ± 1.33 Gy | Preliminary |
+
+### v2.3 Experiments — In Progress
+
+| ID | Seeds | Status | Tracking |
+|----|-------|--------|----------|
+| baseline_v23 (seed456) | 456 | Training (~epoch 55/200) | #54 |
+| baseline_v23 aggregate | 42, 123, 456 | Waiting on seed456 | #54 |
+| augmentation_ablation | 42 | Queued after seeds | #45 |
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
@@ -58,4 +67,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-02-24*
+*Last updated: 2026-02-25*

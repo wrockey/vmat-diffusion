@@ -30,7 +30,7 @@
 
 Run silently (do not narrate unless something is wrong):
 
-1. **Check GitHub Issues** — `gh issue list --state open --limit 50`
+1. **Check GitHub Issues** — `gh issue list --state open --limit 100`
 2. **Check project board** — `gh project item-list 2 --owner wrockey --limit 100`
 3. **Check git log** — `git log --oneline -10`
 4. **Check discussions** — `gh api graphql -f query='{ repository(owner:"wrockey",name:"vmat-diffusion") { discussions(first:5,orderBy:{field:CREATED_AT,direction:DESC}) { nodes { number title createdAt } } } }'`
@@ -107,8 +107,9 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 **Phase 0 (Setup) — data collection in progress.** See board for full status.
 
 - ~161 SIB cases expected (Institution A: 11 SIB of 74 processed; Institution B: ~150 pending)
+- Current 74 cases not yet locked (#40) — baseline seeds training on provisional split
 - **Blockers:** #38 (locked test set), #39 (inclusion criteria), #40 (data lock) — all need data collection
-- IRB approved (#42). Compute: RTX 3090 local, Argon HPC available for Phase 2.
+- IRB approved (#42). Compute: RTX 3090 local, Argon HPC available for Phase 2 (#46).
 
 ---
 
@@ -218,4 +219,4 @@ Available for Phase 2 scaling. Environment not yet set up (#46).
 
 ---
 
-*Last updated: 2026-02-24*
+*Last updated: 2026-02-25*
