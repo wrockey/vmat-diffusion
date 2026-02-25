@@ -1,8 +1,9 @@
 """
 Generate publication-ready figures for baseline_v23 experiment.
 
-Pipeline validation run on v2.3 preprocessed data (seed 42 only — preliminary).
+Pipeline validation run on v2.3 preprocessed data.
 Generates the standard Medical Physics Figure Set per CLAUDE.md.
+Supports --seed flag to generate figures for any seed (42, 123, 456).
 
 Figures:
 1. Training curves (loss, MAE, Gamma vs epoch)
@@ -15,7 +16,8 @@ Figures:
 8. Femur L/R asymmetry paired bar chart
 
 Created: 2026-02-24
-Experiment: baseline_v23 (preliminary, seed 42 only)
+Updated: 2026-02-25 — made seed-configurable
+Experiment: baseline_v23
 """
 
 import argparse
@@ -81,15 +83,59 @@ DVH_COLORS = {
     'Bowel':   COLORS['purple'],
 }
 
-# ── Data paths (relative to project root) ─────────────────────────────────────
-RUN_DIR = PROJECT_ROOT / 'runs' / 'baseline_v23_seed42'
-METRICS_CSV = RUN_DIR / 'version_1' / 'metrics.csv'
-EVAL_JSON = PROJECT_ROOT / 'predictions' / 'baseline_v23_seed42_test' / 'baseline_evaluation_results.json'
-PRED_DIR = PROJECT_ROOT / 'predictions' / 'baseline_v23_seed42_test'
+# ── Data paths — set dynamically by configure_paths() ─────────────────────────
+RUN_DIR = None
+METRICS_CSV = None
+EVAL_JSON = None
+PRED_DIR = None
 DATA_DIR = Path('/home/wrockey/data/processed_npz')
-FIG_DIR = PROJECT_ROOT / 'runs' / 'baseline_v23' / 'figures'
+FIG_DIR = None
+SEED_LABEL = ''
 
 RX_DOSE_GY = 70.0
+
+
+def configure_paths(seed: int):
+    """Set module-level path variables for the given seed.
+
+    Handles the path inconsistency where seed42 artifacts are under PROJECT_ROOT
+    while seed123+ artifacts are under PROJECT_ROOT/scripts/ (launched from scripts/ dir).
+    """
+    global RUN_DIR, METRICS_CSV, EVAL_JSON, PRED_DIR, FIG_DIR, SEED_LABEL
+    SEED_LABEL = f'seed {seed}'
+
+    exp_name = f'baseline_v23_seed{seed}'
+
+    # Find run dir — check both project root and scripts/ subdir
+    for base in [PROJECT_ROOT, PROJECT_ROOT / 'scripts']:
+        candidate = base / 'runs' / exp_name
+        if candidate.exists():
+            RUN_DIR = candidate
+            break
+    else:
+        RUN_DIR = PROJECT_ROOT / 'runs' / exp_name  # fallback
+
+    # Find metrics CSV — check version_0 and version_1
+    for ver in ['version_1', 'version_0']:
+        candidate = RUN_DIR / ver / 'metrics.csv'
+        if candidate.exists():
+            METRICS_CSV = candidate
+            break
+    else:
+        METRICS_CSV = RUN_DIR / 'version_0' / 'metrics.csv'  # fallback
+
+    # Find eval JSON — check both locations
+    for base in [PROJECT_ROOT, PROJECT_ROOT / 'scripts']:
+        candidate = base / 'predictions' / f'{exp_name}_test' / 'baseline_evaluation_results.json'
+        if candidate.exists():
+            EVAL_JSON = candidate
+            PRED_DIR = candidate.parent
+            break
+    else:
+        PRED_DIR = PROJECT_ROOT / 'predictions' / f'{exp_name}_test'
+        EVAL_JSON = PRED_DIR / 'baseline_evaluation_results.json'
+
+    FIG_DIR = PROJECT_ROOT / 'runs' / 'baseline_v23' / f'figures_seed{seed}'
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -613,7 +659,7 @@ def fig6_per_case_boxplots(eval_data: dict):
         ax.set_xticks([1])
         ax.set_xticklabels([f'n={len(values_clean)}'])
 
-    fig.suptitle('Per-case Test Metrics (baseline_v23, seed 42)', fontsize=14, y=1.02)
+    fig.suptitle(f'Per-case Test Metrics (baseline_v23, {SEED_LABEL})', fontsize=14, y=1.02)
     fig.tight_layout()
     save_figure(fig, 'fig6_per_case_boxplots')
 
@@ -793,13 +839,18 @@ def main():
         description='Generate publication-ready figures for baseline_v23 experiment.')
     parser.add_argument('--case', type=str, default=None,
                         help='Case ID for single-case figures (default: median MAE case)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed to generate figures for (default: 42)')
     args = parser.parse_args()
+
+    # Configure paths for requested seed
+    configure_paths(args.seed)
 
     # Apply plot config
     plt.rcParams.update(PLOT_CONFIG)
 
     print('=' * 70)
-    print('  baseline_v23 Figure Generation (preliminary, seed 42 only)')
+    print(f'  baseline_v23 Figure Generation ({SEED_LABEL})')
     print('=' * 70)
     print()
 
