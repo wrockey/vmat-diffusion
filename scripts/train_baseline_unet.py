@@ -1688,6 +1688,10 @@ def main():
     parser.add_argument('--rx_dose_gy', type=float, default=70.0)
     parser.add_argument('--devices', type=int, default=1)
     parser.add_argument('--strategy', type=str, default='auto')
+    parser.add_argument('--resume', action='store_true',
+                        help='Auto-resume from last.ckpt if it exists (power outage recovery)')
+    parser.add_argument('--ckpt_path', type=str, default=None,
+                        help='Explicit checkpoint path to resume from')
 
     # Perceptual loss options
     parser.add_argument('--use_gradient_loss', action='store_true',
@@ -1934,11 +1938,21 @@ def main():
         gradient_clip_val=1.0,
     )
     
+    # Resume support — auto-detect last.ckpt for power outage recovery
+    ckpt_path = args.ckpt_path
+    if args.resume and ckpt_path is None:
+        last_ckpt = Path(args.log_dir) / args.exp_name / 'checkpoints' / 'last.ckpt'
+        if last_ckpt.exists():
+            ckpt_path = str(last_ckpt)
+            print(f"\n*** RESUMING from {ckpt_path} ***")
+        else:
+            print(f"\n*** --resume set but no last.ckpt found at {last_ckpt}, starting fresh ***")
+
     # Train
     print(f"\nStarting training for {args.epochs} epochs...")
     print(f"Logging to: {args.log_dir}/{args.exp_name}")
-    
-    trainer.fit(model, train_loader, val_loader)
+
+    trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
     
     print("\n" + "="*60)
     print("BASELINE TRAINING COMPLETE")
