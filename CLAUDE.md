@@ -471,5 +471,6 @@ Four milestones track phase-level progress: `Phase 0: Setup`, `Phase 1: Evaluati
   - **GitHub Issues** — individual tasks, bugs, backburner ideas, decision records. Updated as work progresses.
   - **GitHub Milestones** — phase-level progress. Updated when issues are closed.
 - **No separate plan files.** If a sub-plan is needed, it must be referenced from `.claude/instructions.md`. Currently one archived sub-plan exists: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED).
+- **Script path convention:** Both `train_baseline_unet.py` and `inference_baseline_unet.py` auto-resolve paths relative to the project root (`scripts/../`), so `--log_dir` defaults to `PROJECT_ROOT/runs/` and relative `--output_dir` paths resolve to `PROJECT_ROOT/<path>` regardless of which directory you launch from. All training runs and predictions should land in `PROJECT_ROOT/runs/` and `PROJECT_ROOT/predictions/` respectively — never in `scripts/runs/` or `scripts/predictions/`.
 - **DataLoader:** Use `num_workers=2`, `persistent_workers=False` to avoid deadlocks (especially on WSL)
 - **OAR name mapping:** `oar_mapping.json` maps 100+ clinical naming variations to 8 canonical structures

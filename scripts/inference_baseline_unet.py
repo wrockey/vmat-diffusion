@@ -4,11 +4,14 @@ Inference script for trained Baseline U-Net model.
 Much faster than diffusion: single forward pass per patch (~10 sec vs ~10 min).
 
 Usage:
-    python inference_baseline_unet.py \
-        --checkpoint ./runs/baseline_unet/checkpoints/best.ckpt \
-        --input_dir ./test_npz \
-        --output_dir ./predictions \
+    python scripts/inference_baseline_unet.py \
+        --checkpoint runs/<exp>/checkpoints/best-*.ckpt \
+        --input_dir /path/to/test_npz \
+        --output_dir predictions/<exp>_test \
         --compute_metrics
+
+Note: Relative --output_dir paths are resolved against the project root
+(parent of scripts/), so predictions always land in PROJECT_ROOT/predictions/.
 """
 
 import argparse
@@ -17,6 +20,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict
 import json
+
+# Project root: scripts/ -> vmat-diffusion/
+# Used to resolve relative --output_dir to PROJECT_ROOT/predictions/
+# regardless of which directory the script is launched from.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
 
 import torch
 from tqdm import tqdm
@@ -153,9 +162,12 @@ def main():
     else:
         raise ValueError("Must specify --input or --input_dir")
     
-    # Output directory
+    # Output directory — resolve relative paths against project root
+    # so predictions always land in PROJECT_ROOT/predictions/ regardless of cwd
     if args.output_dir:
         output_dir = Path(args.output_dir)
+        if not output_dir.is_absolute():
+            output_dir = _PROJECT_ROOT / output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
     else:
         output_dir = None

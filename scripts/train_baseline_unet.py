@@ -28,6 +28,12 @@ import math
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+
+# Project root: scripts/ -> vmat-diffusion/
+# Used for default --log_dir so runs always land in PROJECT_ROOT/runs/
+# regardless of which directory the script is launched from.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
 from typing import Optional, Tuple, Dict, List
 import json
 import time
@@ -1747,7 +1753,7 @@ def main():
                        help='Model architecture variant (default: baseline)')
     
     # Logging
-    parser.add_argument('--log_dir', type=str, default='./runs')
+    parser.add_argument('--log_dir', type=str, default=str(_PROJECT_ROOT / 'runs'))
     parser.add_argument('--exp_name', type=str, default='baseline_unet')
     
     # Misc
@@ -2047,9 +2053,9 @@ def main():
     print(f"Best checkpoint: {callbacks[0].best_model_path}")
     print(f"Best val MAE: {callbacks[0].best_model_score:.3f} Gy")
     print("\nTo evaluate:")
-    print(f"  python inference_baseline_unet.py \\")
+    print(f"  python scripts/inference_baseline_unet.py \\")
     print(f"      --checkpoint {callbacks[0].best_model_path} \\")
-    print(f"      --input_dir ./test_npz --output_dir ./predictions")
+    print(f"      --input_dir ./test_npz --output_dir predictions/{args.exp_name}_test")
 
 
 if __name__ == '__main__':
