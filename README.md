@@ -7,22 +7,34 @@ Loss-function engineering for clinically acceptable prostate VMAT dose predictio
 This project predicts 3D radiation dose distributions for prostate cancer VMAT (Volumetric Modulated Arc Therapy) treatment planning. Given a patient's CT scan, organ contours, and clinical dose constraints, a 3D U-Net predicts the full dose volume.
 
 **Disease site:** Prostate cancer with SIB (70 Gy PTV70 / 56 Gy PTV56 in 28 fractions)
-
-**Research focus:** Systematic evaluation of loss functions (gradient, DVH-aware, structure-weighted, asymmetric PTV) optimized for clinical acceptability rather than global pixel-wise accuracy.
+**Current dataset:** 74 cases (v2.3 preprocessing), expecting ~161 from 2 institutions
+**Research focus:** Systematic evaluation of loss functions (gradient, DVH-aware, structure-weighted, asymmetric PTV) with learned uncertainty weighting (Kendall 2018), optimized for clinical acceptability rather than global pixel-wise accuracy.
 
 **Primary model:** BaselineUNet3D (~23.7M parameters) with constraint conditioning via FiLM embedding.
 
-## Key Results (Pilot Study, n=23)
+## Key Results
 
-| Loss Function | Val MAE (Gy) | Test MAE (Gy) | Gamma 3%/3mm | Key Strength |
-|---------------|-------------|--------------|-------------|-------------|
-| Baseline U-Net | 3.73 | 1.43 | 14.2% | Starting point |
-| + Gradient Loss | 3.67 | 1.44 | 27.9% | Nearly doubled Gamma |
-| + DVH-Aware | 3.61 | **0.95** | 27.7% | Best test MAE |
-| + Structure-Weighted | **2.91** | 1.40 | **31.2%** | Best Gamma |
-| + Asymmetric PTV | 3.36 | 1.89 | -- | Best D95 coverage |
+### Baseline (v2.3 data, 3-seed aggregate, n=74 train/val, 7 test per seed)
 
-Pilot validated methodology on 23 cases. Production training on 100+ cases is the next phase.
+| Metric | Value | Notes |
+|--------|-------|-------|
+| MAE | 4.22 ± 0.53 Gy | Mean of 3 seed means |
+| Gamma 3%/3mm (global) | 33.8 ± 4.6% | Low due to valid low-dose diversity |
+| Gamma 3%/3mm (PTV-region) | 80.2 ± 5.3% | Clinically relevant region |
+| PTV70 D95 Gap | -1.76 ± 0.69 Gy | Systematic underdosing — target for Phase 2 |
+
+Seeds: 42, 123, 456. MSE-only loss. This establishes the baseline for the 16-condition loss ablation study.
+
+### Loss Components (implemented, Phase 2 combined experiment pending)
+
+| Component | Purpose |
+|-----------|---------|
+| MSE (baseline) | Voxel-wise accuracy |
+| Gradient Loss (3D Sobel) | Dose edge and penumbra realism |
+| DVH-Aware Loss | Clinical metric optimization (D95, Vx, Dmean) |
+| Structure-Weighted Loss | Prioritize PTV and OAR boundary regions |
+| Asymmetric PTV Loss | Penalize underdosing 3x more than overdosing |
+| Uncertainty Weighting | Learned per-component σ (Kendall 2018) |
 
 ## Quick Start
 
@@ -31,7 +43,7 @@ Pilot validated methodology on 23 cases. Production training on 100+ cases is th
 conda env create -f environment.yml
 conda activate vmat-diffusion
 
-# Preprocess DICOM-RT data
+# Preprocess DICOM-RT data (v2.3: crop, B-spline dose interpolation)
 python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
 
 # Train baseline U-Net
@@ -40,10 +52,21 @@ python scripts/train_baseline_unet.py \
     --exp_name my_experiment \
     --epochs 200
 
+# Train with combined loss + uncertainty weighting (Phase 2)
+python scripts/train_baseline_unet.py \
+    --data_dir /path/to/processed_npz \
+    --exp_name combined_loss \
+    --use_gradient_loss --use_dvh_loss \
+    --use_structure_weighted --use_asymmetric_ptv \
+    --use_uncertainty_weighting \
+    --calibration_json /path/to/loss_normalization_calib.json \
+    --epochs 200
+
 # Run inference + evaluation
 python scripts/inference_baseline_unet.py \
     --checkpoint runs/<exp>/checkpoints/best-*.ckpt \
-    --input_dir /path/to/processed_npz
+    --input_dir /path/to/test_npz \
+    --compute_metrics --overlap 64 --gamma_subsample 4
 ```
 
 ## Data Pipeline
@@ -51,7 +74,8 @@ python scripts/inference_baseline_unet.py \
 - **Input:** CT (1 ch) + Signed Distance Fields for 8 structures (8 ch) = 9 input channels
 - **Output:** 3D dose distribution (1 channel)
 - **Conditioning:** 13-dimensional clinical constraint vector
-- **Patch size:** 128x128x128 voxels (sliding window for full-volume inference)
+- **Preprocessing (v2.3):** Native resolution crop (~300×300×Z), B-spline dose interpolation
+- **Patch size:** 128³ voxels (training), sliding window with overlap=64 (inference)
 
 ### 8 Anatomical Structures
 
@@ -69,9 +93,11 @@ python scripts/inference_baseline_unet.py \
 ```
 vmat-diffusion/
 ├── scripts/                        # Training, inference, preprocessing, figures
-│   ├── train_baseline_unet.py      # Primary model trainer
+│   ├── train_baseline_unet.py      # Primary model trainer (all loss components)
 │   ├── inference_baseline_unet.py  # Inference + evaluation
-│   ├── preprocess_dicom_rt_v2.2.py # DICOM-RT to NPZ
+│   ├── preprocess_dicom_rt_v2.2.py # DICOM-RT to NPZ (v2.3 crop pipeline)
+│   ├── uncertainty_loss.py         # UncertaintyWeightedLoss (Kendall 2018)
+│   ├── calibrate_loss_normalization.py # Loss calibration for initial sigmas
 │   └── generate_*_figures.py       # Publication figure scripts
 ├── notebooks/                      # Experiment notebooks (dated)
 │   ├── EXPERIMENTS_INDEX.md        # Master experiment log
@@ -89,14 +115,15 @@ Training outputs (`runs/`), predictions (`predictions/`), and data (`processed/`
 
 | Document | Purpose |
 |----------|---------|
-| `.claude/instructions.md` | Project plan, roadmap, decisions log |
+| `.claude/instructions.md` | Project plan, roadmap, pre-registered analysis plan |
 | `CLAUDE.md` | Code conventions, architecture, experiment protocol |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log |
+| [GitHub Issues](https://github.com/wrockey/vmat-diffusion/issues) | Task tracking |
 
 ## Requirements
 
 - Python 3.10+
-- PyTorch 2.4+ with CUDA 12.4
+- PyTorch 2.4+ with CUDA 12.4+
 - NVIDIA GPU with 16+ GB VRAM (24 GB recommended)
 - See `environment.yml` for full dependency list
 
