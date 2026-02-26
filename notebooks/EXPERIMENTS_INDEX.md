@@ -16,13 +16,13 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-02-24 | baseline_v23 (seed42) | `82bddc5` | [notebook](2026-02-24_baseline_v23_preliminary.ipynb) | BaselineUNet3D | 4.80 ± 2.45 (test, n=7) | 28.1 ± 12.6% (global), 85.5 ± 10.9% (PTV) | -0.86 ± 0.92 Gy | Preliminary |
 | 2026-02-25 | baseline_v23 (seed123) | `c2454b8` | — | BaselineUNet3D | 4.33 ± 2.47 (test, n=7) | 34.3 ± 9.3% (global), 74.6 ± 10.7% (PTV) | -1.99 ± 1.33 Gy | Preliminary |
 | 2026-02-26 | baseline_v23 (seed456) | `11afb2f` | — | BaselineUNet3D | 3.51 ± 3.04 (test, n=7) | 39.2 ± 8.7% (global), 78.8 ± 14.0% (PTV) | -2.46 ± 1.60 Gy | Preliminary |
-| 2026-02-26 | **baseline_v23 (3-seed aggregate)** | `11afb2f` | — | BaselineUNet3D | **4.22 ± 0.53** (seed mean±std) | **33.8 ± 4.6%** (global), **80.2 ± 5.3%** (PTV) | **-1.76 ± 0.69 Gy** | Complete |
+| 2026-02-26 | **baseline_v23 (3-seed aggregate)** | `11afb2f` | [notebook](2026-02-26_baseline_v23_aggregate.ipynb) | BaselineUNet3D | **4.22 ± 0.53** (seed mean±std) | **33.8 ± 4.6%** (global), **80.2 ± 5.3%** (PTV) | **-1.76 ± 0.69 Gy** | Complete |
 
 ### v2.3 Experiments — In Progress
 
 | ID | Seeds | Status | Tracking |
 |----|-------|--------|----------|
-| augmentation_ablation | 42 | Queued | #45 |
+| augmentation_ablation | 42 | Training (~epoch 4/200) | #45 |
 | combined_loss_pilot | 42 | Queued | #57 |
 | architecture_scouts (C11,C13,C15) | 42 | Queued | #53 |
 
