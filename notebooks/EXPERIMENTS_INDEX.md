@@ -17,13 +17,13 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-02-25 | baseline_v23 (seed123) | `c2454b8` | — | BaselineUNet3D | 4.33 ± 2.47 (test, n=7) | 34.3 ± 9.3% (global), 74.6 ± 10.7% (PTV) | -1.99 ± 1.33 Gy | Preliminary |
 | 2026-02-26 | baseline_v23 (seed456) | `11afb2f` | — | BaselineUNet3D | 3.51 ± 3.04 (test, n=7) | 39.2 ± 8.7% (global), 78.8 ± 14.0% (PTV) | -2.46 ± 1.60 Gy | Preliminary |
 | 2026-02-26 | **baseline_v23 (3-seed aggregate)** | `11afb2f` | [notebook](2026-02-26_baseline_v23_aggregate.ipynb) | BaselineUNet3D | **4.22 ± 0.53** (seed mean±std) | **33.8 ± 4.6%** (global), **80.2 ± 5.3%** (PTV) | **-1.76 ± 0.69 Gy** | Complete |
+| 2026-02-27 | augmentation_ablation (seed42, no aug) | `11fb57f` | — | BaselineUNet3D | 5.04 ± 2.92 (test, n=7) | 27.4 ± 9.8% (global), 83.2 ± 9.8% (PTV) | -1.89 ± 1.01 Gy | Complete |
 
 ### v2.3 Experiments — In Progress
 
 | ID | Seeds | Status | Tracking |
 |----|-------|--------|----------|
-| augmentation_ablation | 42 | Training (~epoch 4/200) | #45 |
-| combined_loss_pilot | 42 | Queued | #57 |
+| combined_loss_pilot | 42 | Calibration done, ready to train | #57 |
 | architecture_scouts (C11,C13,C15) | 42 | Queued | #53 |
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
