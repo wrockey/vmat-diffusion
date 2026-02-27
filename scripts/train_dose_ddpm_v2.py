@@ -2,7 +2,7 @@
 Conditional DDPM Trainer for VMAT Dose Prediction (Phase 1 Feasibility)
 
 Version: 2.2
-Compatible with: preprocess_dicom_rt_v2.2.py output
+Compatible with: preprocess_dicom_rt_v2.3.py output
 
 Key Features:
 - Patch-based training (128³) to fit on 3090 (24GB VRAM)

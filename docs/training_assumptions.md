@@ -12,7 +12,7 @@ This document lists all assumptions made by the training pipeline. Understanding
 
 ### Input Format
 
-The training script expects `.npz` files from `preprocess_dicom_rt_v2.2.py`:
+The training script expects `.npz` files from `preprocess_dicom_rt_v2.3.py`:
 
 | Key | Shape | Dtype | Range | Required |
 |-----|-------|-------|-------|----------|

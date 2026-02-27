@@ -1,4 +1,4 @@
-> **CURRENT REFERENCE** — These preprocessing assumptions are active and accurate for `preprocess_dicom_rt_v2.2.py`.
+> **CURRENT REFERENCE** — These preprocessing assumptions are active and accurate for `preprocess_dicom_rt_v2.3.py`.
 > For project strategy: see `.claude/instructions.md`.
 
 # Preprocessing Assumptions and Requirements

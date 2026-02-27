@@ -1,4 +1,4 @@
-> **CURRENT REFERENCE** — This preprocessing guide is active and accurate for `preprocess_dicom_rt_v2.2.py`.
+> **CURRENT REFERENCE** — This preprocessing guide is active and accurate for `preprocess_dicom_rt_v2.3.py`.
 > For project strategy: see `.claude/instructions.md`. For data assumptions: see `docs/preprocessing_assumptions.md`.
 
 # VMAT Preprocessing Guide
@@ -7,7 +7,7 @@
 
 This document describes the preprocessing pipeline that converts DICOM-RT data into the standardized `.npz` format required for model training.
 
-**Script:** `preprocess_dicom_rt_v2.2.py`  
+**Script:** `preprocess_dicom_rt_v2.3.py`  
 **Version:** 2.2.0  
 **Output:** Phase 2-ready `.npz` files with full MLC data
 
@@ -17,7 +17,7 @@ This document describes the preprocessing pipeline that converts DICOM-RT data i
 
 ```bash
 # Single case
-python preprocess_dicom_rt_v2.2.py \
+python preprocess_dicom_rt_v2.3.py \
     --input_dir /path/to/dicom/case \
     --output_dir ./processed_npz \
     --output_name case_0001
@@ -25,7 +25,7 @@ python preprocess_dicom_rt_v2.2.py \
 # Batch processing
 for dir in /path/to/all/cases/*/; do
     name=$(basename "$dir")
-    python preprocess_dicom_rt_v2.2.py \
+    python preprocess_dicom_rt_v2.3.py \
         --input_dir "$dir" \
         --output_dir ./processed_npz \
         --output_name "$name"
@@ -367,7 +367,7 @@ WARNING: Structure 'Bowel' truncated at boundary
 For very large CT series:
 ```bash
 # Process with lower memory usage
-python preprocess_dicom_rt_v2.2.py \
+python preprocess_dicom_rt_v2.3.py \
     --input_dir ./case \
     --output_dir ./output \
     --output_name case \

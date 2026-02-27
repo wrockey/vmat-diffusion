@@ -11,7 +11,7 @@ This document describes the training pipeline for the VMAT dose prediction diffu
 
 **Script:** `train_dose_ddpm_v2.py`  
 **Version:** 2.2.0  
-**Compatible with:** `preprocess_dicom_rt_v2.2.py` output
+**Compatible with:** `preprocess_dicom_rt_v2.3.py` output
 
 ---
 
@@ -60,7 +60,7 @@ pip install pymedphys
 
 ### Data
 
-Input: Preprocessed `.npz` files from `preprocess_dicom_rt_v2.2.py`
+Input: Preprocessed `.npz` files from `preprocess_dicom_rt_v2.3.py`
 
 Required keys in each `.npz`:
 - `ct`: (512, 512, 256) float32

@@ -174,14 +174,14 @@ BODY
     "$MS0"
 
 create_issue \
-    "Preprocess all cases with preprocess_dicom_rt_v2.2.py" \
+    "Preprocess all cases with preprocess_dicom_rt_v2.3.py" \
     "$(cat <<'BODY'
 ## Task
 Run the preprocessing pipeline on all collected DICOM-RT cases.
 
 ## Command
 ```bash
-python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
+python scripts/preprocess_dicom_rt_v2.3.py --skip_plots
 ```
 
 ## Post-processing verification

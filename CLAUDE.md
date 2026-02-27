@@ -5,7 +5,7 @@
 VMAT Diffusion is a deep learning research project for automated **Volumetric Modulated Arc Therapy (VMAT) dose prediction** in radiation therapy. It uses diffusion models (DDPM) and baseline U-Net architectures to predict 3D dose distributions from patient CT scans, organ contours, and clinical dose constraints.
 
 **Disease site:** Prostate cancer with SIB (70 Gy PTV70=prostate / 56 Gy PTV56=seminal vesicles in 28 fractions)
-**Current dataset:** 24 cases (23 usable), expecting 100-150 near-term
+**Current dataset:** ~70 cases, expecting 200-250 near-term
 **Clinical targets (updated 2026-02-17):** PTV70 D95 >= 66.5 Gy, PTV56 D95 >= 53.2 Gy, OAR DVH compliance, PTV-region Gamma > 95%. Global Gamma tracked as diagnostic only — see `.claude/instructions.md` for full priority table.
 
 ## Repository Structure
@@ -17,7 +17,7 @@ vmat-diffusion/
 │   ├── train_dose_ddpm_v2.py         # DDPM trainer (not recommended currently)
 │   ├── inference_baseline_unet.py    # Baseline model inference + evaluation
 │   ├── inference_dose_ddpm.py        # DDPM inference + evaluation
-│   ├── preprocess_dicom_rt_v2.2.py   # DICOM-RT → NPZ preprocessing
+│   ├── preprocess_dicom_rt_v2.3.py   # DICOM-RT → NPZ preprocessing
 │   ├── run_phase1_experiments.py     # Sampling/ensemble ablation
 │   ├── analyze_gamma_metric_hypothesis.py
 │   ├── compute_test_metrics.py       # Standalone test evaluation
@@ -91,7 +91,7 @@ pip install -r requirements.txt
 
 ```bash
 # Preprocessing: DICOM-RT → NPZ (v2.3 crop pipeline)
-python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
+python scripts/preprocess_dicom_rt_v2.3.py --skip_plots
 # Options: --inplane_size 300 --z_margin_mm 30 (defaults)
 
 # Train baseline U-Net (primary model)

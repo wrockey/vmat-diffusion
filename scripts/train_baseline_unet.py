@@ -10,7 +10,7 @@ with the DDPM model. Same architecture, but:
 Purpose: Answer "Is diffusion actually helping?" by providing a baseline.
 
 Version: 1.0
-Compatible with: preprocess_dicom_rt_v2.2.py output
+Compatible with: preprocess_dicom_rt_v2.3.py output
 
 Usage:
     python train_baseline_unet.py --data_dir ./processed_npz --epochs 200

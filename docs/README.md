@@ -30,10 +30,10 @@ This project aims to predict clinically acceptable VMAT (Volumetric Modulated Ar
 
 ```bash
 # Auto-detects ./data/raw and ./processed
-python preprocess_dicom_rt_v2.2.py --mapping_file ./oar_mapping.json
+python preprocess_dicom_rt_v2.3.py --mapping_file ./oar_mapping.json
 
 # Or specify paths explicitly
-python preprocess_dicom_rt_v2.2.py \
+python preprocess_dicom_rt_v2.3.py \
     --input_dir ./data/raw \
     --output_dir ./processed \
     --mapping_file ./oar_mapping.json
@@ -70,7 +70,7 @@ python inference_dose_ddpm.py \
 
 ```
 vmat-diffusion/
-├── preprocess_dicom_rt_v2.2.py   # DICOM-RT preprocessing (Phase 2 ready)
+├── preprocess_dicom_rt_v2.3.py   # DICOM-RT preprocessing (Phase 2 ready)
 ├── train_dose_ddpm_v2.py         # DDPM training script
 ├── inference_dose_ddpm.py        # Inference and evaluation
 ├── train_baseline_unet.py        # Baseline model (for comparison)

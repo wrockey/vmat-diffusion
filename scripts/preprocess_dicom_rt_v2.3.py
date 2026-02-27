@@ -44,7 +44,7 @@ Key Features:
 
 Assumptions: See docs/preprocessing_assumptions.md
 
-Usage: python preprocess_dicom_rt_v2.2.py [flags]
+Usage: python preprocess_dicom_rt_v2.3.py [flags]
 """
 
 import os

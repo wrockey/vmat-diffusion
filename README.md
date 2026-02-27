@@ -44,7 +44,7 @@ conda env create -f environment.yml
 conda activate vmat-diffusion
 
 # Preprocess DICOM-RT data (v2.3: crop, B-spline dose interpolation)
-python scripts/preprocess_dicom_rt_v2.2.py --skip_plots
+python scripts/preprocess_dicom_rt_v2.3.py --skip_plots
 
 # Train baseline U-Net
 python scripts/train_baseline_unet.py \
@@ -95,7 +95,7 @@ vmat-diffusion/
 ├── scripts/                        # Training, inference, preprocessing, figures
 │   ├── train_baseline_unet.py      # Primary model trainer (all loss components)
 │   ├── inference_baseline_unet.py  # Inference + evaluation
-│   ├── preprocess_dicom_rt_v2.2.py # DICOM-RT to NPZ (v2.3 crop pipeline)
+│   ├── preprocess_dicom_rt_v2.3.py # DICOM-RT to NPZ (v2.3 crop pipeline)
 │   ├── uncertainty_loss.py         # UncertaintyWeightedLoss (Kendall 2018)
 │   ├── calibrate_loss_normalization.py # Loss calibration for initial sigmas
 │   └── generate_*_figures.py       # Publication figure scripts

@@ -1,5 +1,5 @@
 """
-DEPRECATED: Use preprocess_dicom_rt_v2.2.py instead.
+DEPRECATED: Use preprocess_dicom_rt_v2.3.py instead.
 
 This script is kept for reference only. The v2.2 version includes:
 - Signed Distance Fields (SDFs) for neural network training
@@ -16,11 +16,11 @@ Version: 2.0 - Adds prescription extraction, SIB support, validation checks
 
 Assumptions: See docs/preprocessing_assumptions.md
 
-Usage: python preprocess_dicom_rt_v2.2.py [flags]
+Usage: python preprocess_dicom_rt_v2.3.py [flags]
 """
 import warnings
 warnings.warn(
-    "preprocess_dicom_rt.py is deprecated. Use preprocess_dicom_rt_v2.2.py instead.",
+    "preprocess_dicom_rt.py is deprecated. Use preprocess_dicom_rt_v2.3.py instead.",
     DeprecationWarning,
     stacklevel=2
 )

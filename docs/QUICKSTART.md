@@ -45,7 +45,7 @@ python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}')"
 ```
 vmat-diffusion-project/
 ├── scripts/                      # Python scripts
-│   ├── preprocess_dicom_rt_v2.2.py
+│   ├── preprocess_dicom_rt_v2.3.py
 │   ├── generate_oar_mapping.py
 │   ├── train_dose_ddpm_v2.py
 │   ├── inference_dose_ddpm.py
@@ -121,11 +121,11 @@ The script will classify structures automatically and flag unclassified ones for
 
 ```bash
 # Process all cases (auto-detects ./data/raw and ./processed)
-python scripts/preprocess_dicom_rt_v2.2.py \
+python scripts/preprocess_dicom_rt_v2.3.py \
     --mapping_file ./oar_mapping.json
 
 # Or specify paths explicitly
-python scripts/preprocess_dicom_rt_v2.2.py \
+python scripts/preprocess_dicom_rt_v2.3.py \
     --input_dir ./data/raw \
     --output_dir ./processed \
     --mapping_file ./oar_mapping.json
@@ -500,7 +500,7 @@ figures/
 CUDA_LAUNCH_BLOCKING=1 python scripts/train_dose_ddpm_v2.py ...
 
 # Verbose preprocessing
-python scripts/preprocess_dicom_rt_v2.2.py --input_dir ... --verbose
+python scripts/preprocess_dicom_rt_v2.3.py --input_dir ... --verbose
 
 # Check for NaN in data
 python -c "

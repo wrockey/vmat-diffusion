@@ -263,7 +263,7 @@ Run both models on same test set, compare:
 
 ---
 
-## Preprocessing Script (`preprocess_dicom_rt_v2.2.py`)
+## Preprocessing Script (`preprocess_dicom_rt_v2.3.py`)
 
 ### [2.2.0] - 2025-01-09
 
@@ -302,7 +302,7 @@ Phase 2-ready preprocessing with full MLC extraction.
 - Default output uses compressed npz format
 
 #### Files
-- `preprocess_dicom_rt_v2.2.py`
+- `preprocess_dicom_rt_v2.3.py`
 
 ---
 
