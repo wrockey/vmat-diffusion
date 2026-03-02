@@ -20,12 +20,12 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-02-27 | augmentation_ablation (seed42, no aug) | `11fb57f` | [notebook](2026-02-27_augmentation_ablation.ipynb) | BaselineUNet3D | 5.04 ± 2.92 (test, n=7) | 27.4 ± 9.8% (global), 83.2 ± 9.8% (PTV) | -1.89 ± 1.01 Gy | Complete |
 | 2026-02-28 | combined_loss_pilot (seed42) | `3076d4f` | [notebook](2026-02-28_combined_loss_pilot.ipynb) | BaselineUNet3D | 4.54 ± 1.84 (test, n=7) | 30.8 ± 12.4% (global), 96.4 ± 5.4% (PTV) | +1.37 ± 0.57 Gy | Preliminary |
 | 2026-03-01 | C11 AttentionUNet MSE (seed42) | `bded645` | [notebook](2026-03-01_C11_attn_mse.ipynb) | AttentionUNet3D | 4.57 ± 2.51 (test, n=7) | 29.6 ± 9.5% (global), 81.1 ± 8.8% (PTV) | -2.20 ± 0.91 Gy | Preliminary |
+| 2026-03-02 | C13 BottleneckAttn MSE (seed42) | `9eaeffa` | [notebook](2026-03-02_C13_bottleneck_mse.ipynb) | BottleneckAttnUNet3D | 4.91 ± 2.87 (test, n=7) | 27.7 ± 11.6% (global), 84.0 ± 11.2% (PTV) | -1.47 ± 1.16 Gy | Preliminary |
 
 ### v2.3 Experiments — In Progress
 
 | ID | Seeds | Status | Tracking |
 |----|-------|--------|----------|
-| C13 BottleneckAttn MSE | 42 | Training | #53 |
 | C15 Wider Baseline MSE | 42 | Queued | #53 |
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
@@ -71,4 +71,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-02-26*
+*Last updated: 2026-03-02*
