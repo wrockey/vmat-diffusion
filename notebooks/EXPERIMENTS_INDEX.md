@@ -22,10 +22,11 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-03-01 | C11 AttentionUNet MSE (seed42) | `bded645` | [notebook](2026-03-01_C11_attn_mse.ipynb) | AttentionUNet3D | 4.57 ± 2.51 (test, n=7) | 29.6 ± 9.5% (global), 81.1 ± 8.8% (PTV) | -2.20 ± 0.91 Gy | Preliminary |
 | 2026-03-02 | C13 BottleneckAttn MSE (seed42) | `9eaeffa` | [notebook](2026-03-02_C13_bottleneck_mse.ipynb) | BottleneckAttnUNet3D | 4.91 ± 2.87 (test, n=7) | 27.7 ± 11.6% (global), 84.0 ± 11.2% (PTV) | -1.47 ± 1.16 Gy | Preliminary |
 | 2026-03-03 | C15 Wider Baseline MSE (seed42) | `559b46c` | [notebook](2026-03-03_C15_wider_mse.ipynb) | BaselineUNet3D (bc=50) | 4.74 ± 2.64 (test, n=7) | 30.4 ± 13.1% (global), 86.2 ± 8.6% (PTV) | -1.27 ± 1.13 Gy | Preliminary |
+| 2026-03-03 | Combined loss 2:1 tuned (seed42) | `9873085` | [notebook](2026-03-03_combined_loss_2to1.ipynb) | BaselineUNet3D | 4.16 ± 1.72 (test, n=7) | 29.3 ± 5.7% (global), 94.4 ± 6.0% (PTV) | +0.53 ± 0.93 Gy | Preliminary |
 
 ### v2.3 Experiments — In Progress
 
-*Architecture scout series (C11/C13/C15) complete. All three negative — architecture not the bottleneck. Next: combined loss weight tuning.*
+*Combined loss weight tuning: 3:1 overdoses (+1.37 Gy), 2:1 closer (+0.53 Gy) but PTV gamma drops to 94.4%. Sweet spot likely ~2.5:1.*
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
