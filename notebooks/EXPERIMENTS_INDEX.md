@@ -23,10 +23,11 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-03-02 | C13 BottleneckAttn MSE (seed42) | `9eaeffa` | [notebook](2026-03-02_C13_bottleneck_mse.ipynb) | BottleneckAttnUNet3D | 4.91 ± 2.87 (test, n=7) | 27.7 ± 11.6% (global), 84.0 ± 11.2% (PTV) | -1.47 ± 1.16 Gy | Preliminary |
 | 2026-03-03 | C15 Wider Baseline MSE (seed42) | `559b46c` | [notebook](2026-03-03_C15_wider_mse.ipynb) | BaselineUNet3D (bc=50) | 4.74 ± 2.64 (test, n=7) | 30.4 ± 13.1% (global), 86.2 ± 8.6% (PTV) | -1.27 ± 1.13 Gy | Preliminary |
 | 2026-03-03 | Combined loss 2:1 tuned (seed42) | `9873085` | [notebook](2026-03-03_combined_loss_2to1.ipynb) | BaselineUNet3D | 4.16 ± 1.72 (test, n=7) | 29.3 ± 5.7% (global), 94.4 ± 6.0% (PTV) | +0.53 ± 0.93 Gy | Preliminary |
+| 2026-03-04 | Combined loss 2.5:1 tuned (seed42) | `9aea827` | [notebook](2026-03-04_combined_loss_2.5to1.ipynb) | BaselineUNet3D | 4.88 ± 2.09 (test, n=7) | 27.4 ± 11.2% (global), 95.1 ± 3.5% (PTV) | +0.12 ± 0.60 Gy | Preliminary |
 
 ### v2.3 Experiments — In Progress
 
-*Combined loss weight tuning: 3:1 overdoses (+1.37 Gy), 2:1 closer (+0.53 Gy) but PTV gamma drops to 94.4%. Sweet spot likely ~2.5:1.*
+*Combined loss weight tuning COMPLETE: 3:1 overdoses (+1.37 Gy), 2:1 D95 good (+0.53) but PTV gamma 94.4%, **2.5:1 sweet spot** — PTV gamma 95.1% and D95 +0.12 Gy. Ready for 3-seed confirmatory run (#14) at 2.5:1.*
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
@@ -71,4 +72,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-03-02*
+*Last updated: 2026-03-04*
