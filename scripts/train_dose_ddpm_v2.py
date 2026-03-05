@@ -53,6 +53,10 @@ import time
 import platform
 import csv
 
+# Path resolution — ensures runs/ land under project root, not cwd
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -1242,7 +1246,7 @@ def main():
                        help='Use simplified U-Net for memory efficiency')
     
     # Logging
-    parser.add_argument('--log_dir', type=str, default='./runs')
+    parser.add_argument('--log_dir', type=str, default=str(_PROJECT_ROOT / 'runs'))
     parser.add_argument('--exp_name', type=str, default='vmat_dose_ddpm')
     
     # Misc
@@ -1407,9 +1411,8 @@ def main():
         LearningRateMonitor(logging_interval='epoch'),
         EarlyStopping(
             monitor='val/mae_gy',
-            patience=20,
+            patience=50,
             mode='min',
-            min_delta=0.1,
         ),
         RichProgressBar(),
         Timer(),  # Track epoch timing

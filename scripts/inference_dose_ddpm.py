@@ -34,6 +34,10 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple, List
 import json
 
+# Path resolution — ensures predictions/ land under project root, not cwd
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -230,8 +234,10 @@ def main():
     
     print(f"\nProcessing {len(input_files)} case(s)...")
     
-    # Create output directory
+    # Create output directory (resolve relative paths against project root)
     output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = _PROJECT_ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Process each case
@@ -321,7 +327,7 @@ def main():
     
     # Save aggregate results
     if args.compute_metrics and all_results:
-        results_path = output_dir / 'evaluation_results.json'
+        results_path = output_dir / 'ddpm_evaluation_results.json'
         
         # Compute aggregate metrics
         mae_values = [r['dose_metrics']['mae_gy'] for r in all_results]
