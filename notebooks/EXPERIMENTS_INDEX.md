@@ -27,6 +27,7 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-03-05 | Combined loss 2.5:1 (seed123) | `900a977` | — | BaselineUNet3D | 3.31 ± 1.18 (test, n=7) | 28.5 ± 9.1% (global), 91.3 ± 3.3% (PTV) | -0.29 ± 0.45 Gy | Preliminary |
 | 2026-03-05 | Combined loss 2.5:1 (seed456) | `900a977` | — | BaselineUNet3D | 4.04 ± 2.43 (test, n=7) | 35.5 ± 4.5% (global), 96.6 ± 2.8% (PTV) | +0.35 ± 0.66 Gy | Preliminary |
 | 2026-03-05 | **Combined loss 2.5:1 (3-seed aggregate)** | `900a977` | [notebook](2026-03-05_combined_loss_2.5to1_aggregate.ipynb) | BaselineUNet3D | **4.07 ± 0.64** (seed mean±std) | **30.4 ± 3.6%** (global), **94.3 ± 2.2%** (PTV) | **+0.06 ± 0.26 Gy** | Complete |
+| 2026-03-05 | Anatomical variability analysis | `0ff2dcc` | [notebook](2026-03-05_anatomical_variability.ipynb) | Analysis | N/A | N/A | N/A | Complete |
 
 ### v2.3 Experiments — In Progress
 
