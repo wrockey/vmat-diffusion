@@ -435,10 +435,10 @@ class VMATDosePatchDataset(Dataset):
         """
         half_p = P // 2
         
-        # Valid range for patch centers (ensure patch stays in volume)
-        y_range = (half_p, H - half_p)
-        x_range = (half_p, W - half_p)
-        z_range = (half_p, D - half_p)
+        # Valid range for patch centers — clamp when volume dim <= patch_size
+        y_range = (half_p, max(half_p + 1, H - half_p))
+        x_range = (half_p, max(half_p + 1, W - half_p))
+        z_range = (half_p, max(half_p + 1, D - half_p))
         
         # Strategy: alternate between dose-focused and random sampling
         if patch_idx % 2 == 0:
