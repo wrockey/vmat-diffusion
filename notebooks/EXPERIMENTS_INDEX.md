@@ -24,10 +24,13 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-03-03 | C15 Wider Baseline MSE (seed42) | `559b46c` | [notebook](2026-03-03_C15_wider_mse.ipynb) | BaselineUNet3D (bc=50) | 4.74 ± 2.64 (test, n=7) | 30.4 ± 13.1% (global), 86.2 ± 8.6% (PTV) | -1.27 ± 1.13 Gy | Preliminary |
 | 2026-03-03 | Combined loss 2:1 tuned (seed42) | `9873085` | [notebook](2026-03-03_combined_loss_2to1.ipynb) | BaselineUNet3D | 4.16 ± 1.72 (test, n=7) | 29.3 ± 5.7% (global), 94.4 ± 6.0% (PTV) | +0.53 ± 0.93 Gy | Preliminary |
 | 2026-03-04 | Combined loss 2.5:1 tuned (seed42) | `9aea827` | [notebook](2026-03-04_combined_loss_2.5to1.ipynb) | BaselineUNet3D | 4.88 ± 2.09 (test, n=7) | 27.4 ± 11.2% (global), 95.1 ± 3.5% (PTV) | +0.12 ± 0.60 Gy | Preliminary |
+| 2026-03-05 | Combined loss 2.5:1 (seed123) | `900a977` | — | BaselineUNet3D | 3.31 ± 1.18 (test, n=7) | 28.5 ± 9.1% (global), 91.3 ± 3.3% (PTV) | -0.29 ± 0.45 Gy | Preliminary |
+| 2026-03-05 | Combined loss 2.5:1 (seed456) | `900a977` | — | BaselineUNet3D | 4.04 ± 2.43 (test, n=7) | 35.5 ± 4.5% (global), 96.6 ± 2.8% (PTV) | +0.35 ± 0.66 Gy | Preliminary |
+| 2026-03-05 | **Combined loss 2.5:1 (3-seed aggregate)** | `900a977` | [notebook](2026-03-05_combined_loss_2.5to1_aggregate.ipynb) | BaselineUNet3D | **4.07 ± 0.64** (seed mean±std) | **30.4 ± 3.6%** (global), **94.3 ± 2.2%** (PTV) | **+0.06 ± 0.26 Gy** | Complete |
 
 ### v2.3 Experiments — In Progress
 
-*Combined loss weight tuning COMPLETE: 3:1 overdoses (+1.37 Gy), 2:1 D95 good (+0.53) but PTV gamma 94.4%, **2.5:1 sweet spot** — PTV gamma 95.1% and D95 +0.12 Gy. Ready for 3-seed confirmatory run (#14) at 2.5:1.*
+*Combined loss 2.5:1 3-seed run COMPLETE (#14). PTV gamma 94.3±2.2% (near 95% target), D95 gap essentially zero (+0.06±0.26 Gy). Massive improvement over baseline (80.2% → 94.3% PTV gamma, -1.76 → +0.06 D95). Next: dataset expansion, outlier investigation, publication prep.*
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
@@ -72,4 +75,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-05*

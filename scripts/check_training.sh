@@ -1,6 +1,6 @@
 #!/bin/bash
 # Quick training status check for baseline_v23_seed123
-RUN_DIR="/home/wrockey/projects/vmat-diffusion/scripts/runs/baseline_v23_seed123"
+RUN_DIR="/home/wrockey/projects/vmat-diffusion/runs/baseline_v23_seed123"
 METRICS="$RUN_DIR/version_1/metrics.csv"
 
 echo "=== Training Check $(date) ==="

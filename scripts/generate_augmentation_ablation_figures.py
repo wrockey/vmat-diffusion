@@ -36,15 +36,7 @@ def configure_augmentation_ablation_paths():
 
     exp_name = 'augmentation_ablation_seed42'
 
-    # Run dir — this experiment was started before the path fix,
-    # so it lives in scripts/runs/
-    for base_dir in [PROJECT_ROOT, PROJECT_ROOT / 'scripts']:
-        candidate = base_dir / 'runs' / exp_name
-        if candidate.exists():
-            base_figs.RUN_DIR = candidate
-            break
-    else:
-        base_figs.RUN_DIR = PROJECT_ROOT / 'scripts' / 'runs' / exp_name
+    base_figs.RUN_DIR = PROJECT_ROOT / 'runs' / exp_name
 
     # Metrics CSV — find latest version
     for ver in ['version_3', 'version_2', 'version_1', 'version_0']:
