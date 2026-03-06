@@ -1,0 +1,262 @@
+#!/bin/bash
+# =============================================================================
+# train_ablation.job — SGE array job for VMAT ablation training
+#
+# Submits 39 tasks (13 conditions x 3 seeds) to UI-GPU queue with A100.
+# Each task:
+#   1. Stages data from /nfsscratch to /localscratch
+#   2. Runs training (~4-6 hours per run on A100)
+#   3. Saves environment snapshot
+#   4. Copies results back to /nfsscratch
+#
+# Usage: qsub train_ablation.job
+#        qsub -t 1-9 train_ablation.job    # subset (C1-C3 only)
+# =============================================================================
+
+#$ -N vmat_train
+#$ -q UI-GPU
+#$ -l gpu_a100=true
+#$ -l ngpus=1
+#$ -pe smp 4
+#$ -l h_rt=48:00:00
+#$ -l h_vmem=16G
+#$ -l mf=64G
+#$ -cwd
+#$ -t 1-39
+#$ -j y
+#$ -o /localscratch/
+#$ -m ea
+#$ -M hawkid@uiowa.edu
+
+# =============================================================================
+# SETUP
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TIMESTAMP=$(date '+%Y-%m-%d_%H%M%S')
+
+# Source the config to get experiment parameters
+source "${SCRIPT_DIR}/ablation_config.sh"
+get_task_config "${SGE_TASK_ID}"
+
+echo "=============================================="
+echo "VMAT Ablation Training"
+echo "=============================================="
+echo "Task ID:     ${SGE_TASK_ID}"
+echo "Condition:   C${CONDITION_IDX} — ${EXP_NAME}"
+echo "Seed:        ${SEED}"
+echo "CLI flags:   ${CLI_FLAGS}"
+echo "Hostname:    $(hostname)"
+echo "GPU:         $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'unknown')"
+echo "Start time:  ${TIMESTAMP}"
+echo "=============================================="
+
+# Create run-specific directory name
+RUN_NAME="${EXP_NAME}_seed${SEED}"
+
+# Local scratch paths
+LOCAL_DATA="/localscratch/vmat_data_${SGE_TASK_ID}"
+LOCAL_RUNS="/localscratch/vmat_runs_${SGE_TASK_ID}"
+LOCAL_LOG="/localscratch/vmat_log_${SGE_TASK_ID}.txt"
+
+# Redirect all output to local scratch log (in addition to SGE log)
+exec > >(tee -a "${LOCAL_LOG}") 2>&1
+
+# =============================================================================
+# STAGE DATA to /localscratch
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Staging data to /localscratch ..."
+
+if [[ ! -d "${DATA_DIR}" ]]; then
+    echo "ERROR: Data directory not found: ${DATA_DIR}"
+    echo "Run setup_env.sh first to stage data to /nfsscratch."
+    exit 1
+fi
+
+mkdir -p "${LOCAL_DATA}"
+rsync -a --info=progress2 "${DATA_DIR}/" "${LOCAL_DATA}/"
+
+DATA_SIZE=$(du -sh "${LOCAL_DATA}" | cut -f1)
+FILE_COUNT=$(find "${LOCAL_DATA}" -name "*.npz" | wc -l)
+echo "[$(date '+%H:%M:%S')] Data staged: ${DATA_SIZE}, ${FILE_COUNT} NPZ files"
+
+if [[ "${FILE_COUNT}" -lt 10 ]]; then
+    echo "WARNING: Only ${FILE_COUNT} NPZ files found. Expected ~200."
+fi
+
+# =============================================================================
+# VERIFY CALIBRATION JSON (required for uncertainty-weighted conditions)
+# =============================================================================
+if echo "${CLI_FLAGS}" | grep -q "calibration_json"; then
+    # Update the calibration path to point to the local copy
+    LOCAL_CALIB="${LOCAL_DATA}/loss_normalization_calib.json"
+    if [[ -f "${LOCAL_CALIB}" ]]; then
+        CLI_FLAGS=$(echo "${CLI_FLAGS}" | sed "s|${CALIBRATION_JSON}|${LOCAL_CALIB}|g")
+        echo "[$(date '+%H:%M:%S')] Using local calibration JSON: ${LOCAL_CALIB}"
+    elif [[ -f "${CALIBRATION_JSON}" ]]; then
+        echo "[$(date '+%H:%M:%S')] Using NFS calibration JSON: ${CALIBRATION_JSON}"
+    else
+        echo "ERROR: Calibration JSON not found at ${CALIBRATION_JSON} or ${LOCAL_CALIB}"
+        echo "Run calibrate_loss_normalization.py first."
+        exit 1
+    fi
+fi
+
+# =============================================================================
+# ACTIVATE ENVIRONMENT
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Activating conda environment ..."
+
+# Try conda activation methods (Argon may use different init)
+if [[ -f "${HOME}/miniforge3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/miniforge3/etc/profile.d/conda.sh"
+elif [[ -f "${HOME}/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/miniconda3/etc/profile.d/conda.sh"
+elif command -v conda &>/dev/null; then
+    eval "$(conda shell.bash hook)"
+fi
+
+conda activate vmat-diffusion
+
+echo "Python: $(which python)"
+echo "PyTorch: $(python -c 'import torch; print(torch.__version__)')"
+echo "CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())')"
+echo "GPU count: $(python -c 'import torch; print(torch.cuda.device_count())')"
+
+# =============================================================================
+# RUN TRAINING
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Starting training: ${RUN_NAME}"
+echo ""
+
+cd "${PROJECT_ROOT}"
+
+# Create local runs directory
+mkdir -p "${LOCAL_RUNS}"
+
+TRAIN_CMD="python scripts/train_baseline_unet.py \
+    --data_dir ${LOCAL_DATA} \
+    --log_dir ${LOCAL_RUNS} \
+    --exp_name ${RUN_NAME} \
+    --seed ${SEED} \
+    --epochs 200 \
+    --batch_size 2 \
+    --lr 0.0001 \
+    --num_workers 4 \
+    ${CLI_FLAGS}"
+
+echo "Command: ${TRAIN_CMD}"
+echo ""
+
+TRAIN_START=$(date +%s)
+
+# Run training (allow non-zero exit to still copy results back)
+set +e
+eval "${TRAIN_CMD}"
+TRAIN_EXIT=$?
+set -e
+
+TRAIN_END=$(date +%s)
+TRAIN_DURATION=$(( (TRAIN_END - TRAIN_START) / 60 ))
+
+echo ""
+echo "[$(date '+%H:%M:%S')] Training finished."
+echo "  Exit code: ${TRAIN_EXIT}"
+echo "  Duration:  ${TRAIN_DURATION} minutes"
+
+if [[ "${TRAIN_EXIT}" -ne 0 ]]; then
+    echo "WARNING: Training exited with code ${TRAIN_EXIT}."
+    echo "Results (if any) will still be copied back."
+fi
+
+# =============================================================================
+# ENVIRONMENT SNAPSHOT
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Saving environment snapshot ..."
+
+LOCAL_RUN_DIR="${LOCAL_RUNS}/${RUN_NAME}"
+if [[ -d "${LOCAL_RUN_DIR}" ]]; then
+    conda list --export > "${LOCAL_RUN_DIR}/environment_snapshot.txt" 2>/dev/null || true
+    echo "  Saved to ${LOCAL_RUN_DIR}/environment_snapshot.txt"
+
+    # Save GPU info
+    nvidia-smi > "${LOCAL_RUN_DIR}/gpu_info.txt" 2>/dev/null || true
+
+    # Save training metadata
+    cat > "${LOCAL_RUN_DIR}/job_metadata.json" << METADATA_EOF
+{
+    "sge_job_id": "${JOB_ID}",
+    "sge_task_id": "${SGE_TASK_ID}",
+    "condition": "C${CONDITION_IDX}",
+    "exp_name": "${EXP_NAME}",
+    "run_name": "${RUN_NAME}",
+    "seed": ${SEED},
+    "hostname": "$(hostname)",
+    "gpu": "$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'unknown')",
+    "start_time": "${TIMESTAMP}",
+    "end_time": "$(date '+%Y-%m-%d_%H%M%S')",
+    "train_duration_min": ${TRAIN_DURATION},
+    "train_exit_code": ${TRAIN_EXIT},
+    "data_file_count": ${FILE_COUNT},
+    "cli_flags": "${CLI_FLAGS}"
+}
+METADATA_EOF
+    echo "  Saved job_metadata.json"
+else
+    echo "WARNING: Local run directory not found: ${LOCAL_RUN_DIR}"
+    echo "  Listing ${LOCAL_RUNS}:"
+    ls -la "${LOCAL_RUNS}/" 2>/dev/null || echo "  (directory does not exist)"
+fi
+
+# =============================================================================
+# COPY RESULTS BACK to /nfsscratch
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Copying results to /nfsscratch ..."
+
+DEST_RUNS="${RESULTS_DIR}/runs"
+mkdir -p "${DEST_RUNS}"
+
+if [[ -d "${LOCAL_RUN_DIR}" ]]; then
+    rsync -a --info=progress2 "${LOCAL_RUN_DIR}/" "${DEST_RUNS}/${RUN_NAME}/"
+    RESULT_SIZE=$(du -sh "${DEST_RUNS}/${RUN_NAME}" | cut -f1)
+    echo "  Copied ${RESULT_SIZE} to ${DEST_RUNS}/${RUN_NAME}/"
+else
+    echo "WARNING: No run directory to copy."
+fi
+
+# Copy the SGE log file
+LOG_DEST="${RESULTS_DIR}/logs"
+mkdir -p "${LOG_DEST}"
+cp "${LOCAL_LOG}" "${LOG_DEST}/train_${RUN_NAME}_${TIMESTAMP}.log" 2>/dev/null || true
+echo "  Log copied to ${LOG_DEST}/train_${RUN_NAME}_${TIMESTAMP}.log"
+
+# =============================================================================
+# CLEANUP /localscratch
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Cleaning up /localscratch ..."
+rm -rf "${LOCAL_DATA}" "${LOCAL_RUNS}"
+echo "  Done."
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+echo ""
+echo "=============================================="
+echo "TRAINING COMPLETE"
+echo "=============================================="
+echo "Task:     ${SGE_TASK_ID} / C${CONDITION_IDX} / seed${SEED}"
+echo "Run:      ${RUN_NAME}"
+echo "Duration: ${TRAIN_DURATION} minutes"
+echo "Exit:     ${TRAIN_EXIT}"
+echo "Results:  ${DEST_RUNS}/${RUN_NAME}/"
+echo "Log:      ${LOG_DEST}/train_${RUN_NAME}_${TIMESTAMP}.log"
+echo "=============================================="
+
+exit ${TRAIN_EXIT}

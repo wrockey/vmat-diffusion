@@ -18,8 +18,10 @@
 
 ### Rules
 
-- **GitHub is the source of truth for progress.** Do NOT duplicate issue lists or status in this file.
-- **When you update this file, also update GitHub** (issues, board) if the change affects task state. See memory file for the sync reminder.
+- **GitHub is the single source of truth for project status.** Do NOT duplicate results, task lists, or status in this file or MEMORY.md. If it belongs on GitHub, put it there — not here.
+- **This file stores only:** strategy, directives, pre-registered analysis plan, platform config. It should rarely change.
+- **MEMORY.md stores only:** session workflow rules, local environment gotchas, CLI traps. NOT status, NOT results, NOT task lists.
+- **When something changes,** update the GitHub issue (or pinned #63), not these files.
 - **Do not create separate plan files.** One archived sub-plan exists: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED).
 
 ---
@@ -104,12 +106,10 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 
 ## CURRENT STATE
 
-**Phase 0 (Setup) — data collection in progress.** See board for full status.
-
-- ~161 SIB cases expected (Institution A: 11 SIB of 74 processed; Institution B: ~150 pending)
-- Current 74 cases not yet locked (#40) — baseline seeds training on provisional split
-- **Blockers:** #38 (locked test set), #39 (inclusion criteria), #40 (data lock) — all need data collection
-- IRB approved (#42). Compute: RTX 3090 local, Argon HPC available for Phase 2 (#46).
+**Do NOT duplicate project status here. Check GitHub instead:**
+- **Pinned issue #63** — current results, critical path, ablation plan, blocker
+- **`gh issue list --state open`** — all open tasks
+- **`gh api repos/wrockey/vmat-diffusion/milestones`** — phase-level progress
 
 ---
 
@@ -141,20 +141,11 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 | 9 | Full - Structure | Ablation |
 | 10 | Full - AsymPTV | Ablation |
 
-**Architecture comparison (C11-C16, Amendment 1, 2026-02-24 pre-results):**
+**Architecture comparison (C11-C16): DESCOPED (Amendment 2, 2026-03-06)**
 
-> Rationale: Architecture is a confound. Added before any v2.3 results observed.
+> Single-seed scouts of C11 (Attention), C13 (BottleneckAttn), C15 (WiderBaseline) showed no improvement over baseline on 70 cases. Architecture is not the bottleneck. Moved to backburner (#53). Run only if reviewer requests — if so, C11+C12 (AttentionUNet MSE vs Full) as a 6-run supplement.
 
-| # | Condition | Architecture | Loss |
-|---|-----------|-------------|------|
-| 11 | AttentionUNet + MSE | AttentionUNet3D | MSE |
-| 12 | AttentionUNet + Full | AttentionUNet3D | Full + UW |
-| 13 | BottleneckAttn + MSE | BottleneckAttnUNet3D | MSE |
-| 14 | BottleneckAttn + Full | BottleneckAttnUNet3D | Full + UW |
-| 15 | WiderBaseline + MSE | BaselineUNet3D (bc=50) | MSE |
-| 16 | WiderBaseline + Full | BaselineUNet3D (bc=50) | Full + UW |
-
-**Total: 16 conditions x 3 seeds = 48 runs (~624 GPU-hours). Issues: #14, #53.**
+**Final plan: 10 conditions x 3 seeds = 30 runs (~135 GPU-hours). Argon scripts: #62.**
 
 ### Metrics
 
@@ -169,9 +160,8 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 1. **Per-condition:** mean +/- std across 3 seeds (per-case averages first), 95% bootstrap CI
 2. **Family 1 (loss):** Wilcoxon signed-rank on per-case means (n=~16) vs baseline. 9 tests, Holm-Bonferroni.
 3. **Ablation:** Full vs each remove-one (4 tests, Holm-Bonferroni).
-4. **Family 2 (architecture):** 6 vs-baseline + 4 attention-vs-control = 10 tests, Holm-Bonferroni (separate family).
+4. ~~**Family 2 (architecture):** descoped, see Amendment 2 above.~~
 5. **Effect size:** Cohen's d (paired). If < 2x std, expand to 5 seeds.
-6. **Exploratory:** 2-way interaction (architecture x loss type).
 
 ### Decision Rules (pre-specified)
 
@@ -182,9 +172,9 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 | Nothing beats baseline | Negative result — still publishable |
 | Single component matches full combined | Simpler is better |
 | Cross-institutional drop >20% | Limitation |
-| Attention beats baseline AND wider control | Attention mechanism helps |
-| Attention beats baseline but NOT wider control | Capacity, not attention |
-| No architecture variant beats baseline | Architecture not the bottleneck |
+| ~~Attention beats baseline AND wider control~~ | ~~descoped~~ |
+| ~~Attention beats baseline but NOT wider control~~ | ~~descoped~~ |
+| ~~No architecture variant beats baseline~~ | Confirmed on 70-case scouts — architecture not the bottleneck |
 
 ### Cross-Institutional Validation
 
@@ -215,8 +205,9 @@ Secondary: Train on B only -> test on A; train on A+B -> test (standard). Report
 
 ### Argon HPC
 
-Available for Phase 2 scaling. Environment not yet set up (#46).
+Available for Phase 2 ablation. Batch scripts drafted in `scripts/argon/` (#62).
+Full reference: `memory/argon_cluster.md`. SGE scheduler (not SLURM), UI-GPU queue, A100/H100 GPUs.
 
 ---
 
-*Last updated: 2026-02-25*
+*Last updated: 2026-03-06*

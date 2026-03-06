@@ -212,6 +212,12 @@ def main():
             if gamma_global.get('gamma_pass_rate') is not None:
                 print(f"  Gamma: {gamma_global['gamma_pass_rate']:.1f}%")
 
+            # Per-structure MAE
+            per_struct = dm.get('per_structure_mae', {})
+            if per_struct:
+                parts = [f"{name}: {mae:.2f}" for name, mae in per_struct.items()]
+                print(f"  Per-structure MAE (Gy): {', '.join(parts)}")
+
     # Save aggregate results
     if args.compute_metrics and all_results and output_dir:
         results_path = output_dir / 'baseline_evaluation_results.json'
@@ -239,6 +245,33 @@ def main():
             summary['aggregate_metrics']['gamma_pass_rate_mean'] = float(np.mean(gamma_values))
             summary['aggregate_metrics']['gamma_pass_rate_std'] = float(np.std(gamma_values))
 
+        # PTV-region gamma aggregation
+        ptv_gamma_values = [
+            r['gamma']['ptv_region_3mm3pct']['gamma_pass_rate']
+            for r in all_results
+            if r.get('gamma', {}).get('ptv_region_3mm3pct', {}).get('gamma_pass_rate') is not None
+        ]
+        if ptv_gamma_values:
+            summary['aggregate_metrics']['ptv_gamma_pass_rate_mean'] = float(np.mean(ptv_gamma_values))
+            summary['aggregate_metrics']['ptv_gamma_pass_rate_std'] = float(np.std(ptv_gamma_values))
+
+        # Per-structure MAE aggregation
+        struct_mae_lists = {}
+        for r in all_results:
+            per_struct = r.get('dose_metrics', {}).get('per_structure_mae', {})
+            for name, mae_val in per_struct.items():
+                struct_mae_lists.setdefault(name, []).append(mae_val)
+
+        if struct_mae_lists:
+            per_struct_agg = {}
+            for name, vals in struct_mae_lists.items():
+                per_struct_agg[name] = {
+                    'mean': float(np.mean(vals)),
+                    'std': float(np.std(vals)),
+                    'n_cases': len(vals),
+                }
+            summary['aggregate_metrics']['per_structure_mae'] = per_struct_agg
+
         with open(results_path, 'w') as f:
             json.dump(summary, f, indent=2, cls=NumpyEncoder)
 
@@ -248,7 +281,20 @@ def main():
         print(f"Cases evaluated: {len(all_results)}")
         print(f"MAE: {summary['aggregate_metrics']['mae_gy_mean']:.2f} +/- {summary['aggregate_metrics']['mae_gy_std']:.2f} Gy")
         if gamma_values:
-            print(f"Gamma: {summary['aggregate_metrics']['gamma_pass_rate_mean']:.1f} +/- {summary['aggregate_metrics']['gamma_pass_rate_std']:.1f}%")
+            print(f"Gamma (global): {summary['aggregate_metrics']['gamma_pass_rate_mean']:.1f} +/- {summary['aggregate_metrics']['gamma_pass_rate_std']:.1f}%")
+        if ptv_gamma_values:
+            print(f"Gamma (PTV):    {summary['aggregate_metrics']['ptv_gamma_pass_rate_mean']:.1f} +/- {summary['aggregate_metrics']['ptv_gamma_pass_rate_std']:.1f}%")
+
+        # Per-structure MAE summary table
+        if struct_mae_lists:
+            print(f"\nPer-Structure MAE (Gy):")
+            print(f"  {'Structure':<12} {'Mean':>8} {'Std':>8} {'N':>4}")
+            print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*4}")
+            for name in STRUCTURE_CHANNELS.values():
+                if name in per_struct_agg:
+                    s = per_struct_agg[name]
+                    print(f"  {name:<12} {s['mean']:>8.2f} {s['std']:>8.2f} {s['n_cases']:>4}")
+
         print(f"\nResults saved to: {results_path}")
 
 

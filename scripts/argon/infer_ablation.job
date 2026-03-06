@@ -1,0 +1,268 @@
+#!/bin/bash
+# =============================================================================
+# infer_ablation.job — SGE array job for VMAT ablation inference + evaluation
+#
+# Submits 39 tasks (13 conditions x 3 seeds), chained after training.
+# Each task:
+#   1. Stages test data from /nfsscratch to /localscratch
+#   2. Locates best checkpoint from training results
+#   3. Runs inference with standard settings (overlap=64, gamma_subsample=4)
+#   4. Copies predictions back to /nfsscratch
+#
+# Usage: qsub -hold_jid <training_job_id> infer_ablation.job
+#        (normally submitted via submit_ablation.sh)
+# =============================================================================
+
+#$ -N vmat_infer
+#$ -q UI-GPU
+#$ -l gpu_a100=true
+#$ -l ngpus=1
+#$ -pe smp 4
+#$ -l h_rt=8:00:00
+#$ -l h_vmem=16G
+#$ -l mf=64G
+#$ -cwd
+#$ -t 1-39
+#$ -j y
+#$ -o /localscratch/
+#$ -m ea
+#$ -M hawkid@uiowa.edu
+
+# =============================================================================
+# SETUP
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TIMESTAMP=$(date '+%Y-%m-%d_%H%M%S')
+
+# Source the config
+source "${SCRIPT_DIR}/ablation_config.sh"
+get_task_config "${SGE_TASK_ID}"
+
+RUN_NAME="${EXP_NAME}_seed${SEED}"
+
+echo "=============================================="
+echo "VMAT Ablation Inference"
+echo "=============================================="
+echo "Task ID:     ${SGE_TASK_ID}"
+echo "Condition:   C${CONDITION_IDX} — ${EXP_NAME}"
+echo "Seed:        ${SEED}"
+echo "Run:         ${RUN_NAME}"
+echo "Hostname:    $(hostname)"
+echo "GPU:         $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'unknown')"
+echo "Start time:  ${TIMESTAMP}"
+echo "=============================================="
+
+# Local scratch paths
+LOCAL_DATA="/localscratch/vmat_testdata_${SGE_TASK_ID}"
+LOCAL_RUNS="/localscratch/vmat_infer_runs_${SGE_TASK_ID}"
+LOCAL_PREDS="/localscratch/vmat_preds_${SGE_TASK_ID}"
+LOCAL_LOG="/localscratch/vmat_infer_log_${SGE_TASK_ID}.txt"
+
+# Redirect output
+exec > >(tee -a "${LOCAL_LOG}") 2>&1
+
+# =============================================================================
+# LOCATE CHECKPOINT
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Locating best checkpoint ..."
+
+TRAIN_RESULTS="${RESULTS_DIR}/runs/${RUN_NAME}"
+
+if [[ ! -d "${TRAIN_RESULTS}" ]]; then
+    echo "ERROR: Training results not found: ${TRAIN_RESULTS}"
+    echo "Training may have failed for task ${SGE_TASK_ID} (${RUN_NAME})."
+    exit 1
+fi
+
+# Find best checkpoint (glob for best-*.ckpt)
+CHECKPOINT=$(find "${TRAIN_RESULTS}/checkpoints" -name "best-*.ckpt" -type f 2>/dev/null | head -1)
+
+if [[ -z "${CHECKPOINT}" ]]; then
+    # Fallback: try last.ckpt
+    CHECKPOINT=$(find "${TRAIN_RESULTS}/checkpoints" -name "last.ckpt" -type f 2>/dev/null | head -1)
+    if [[ -z "${CHECKPOINT}" ]]; then
+        echo "ERROR: No checkpoint found in ${TRAIN_RESULTS}/checkpoints/"
+        echo "Contents:"
+        ls -la "${TRAIN_RESULTS}/checkpoints/" 2>/dev/null || echo "  (directory missing)"
+        exit 1
+    fi
+    echo "WARNING: No best-*.ckpt found, using last.ckpt"
+fi
+
+echo "  Checkpoint: ${CHECKPOINT}"
+CKPT_SIZE=$(du -h "${CHECKPOINT}" | cut -f1)
+echo "  Size: ${CKPT_SIZE}"
+
+# =============================================================================
+# STAGE TEST DATA to /localscratch
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Staging test data to /localscratch ..."
+
+# Test data can be in a test/ subdirectory or use test_cases.json
+TEST_DATA_SRC="${DATA_DIR}/test"
+if [[ ! -d "${TEST_DATA_SRC}" ]]; then
+    # Fall back to full data dir (inference script handles test-set filtering)
+    TEST_DATA_SRC="${DATA_DIR}"
+    echo "  No test/ subdirectory found, using full data dir."
+    echo "  Inference script will process all files in input_dir."
+fi
+
+mkdir -p "${LOCAL_DATA}"
+rsync -a --info=progress2 "${TEST_DATA_SRC}/" "${LOCAL_DATA}/"
+
+TEST_COUNT=$(find "${LOCAL_DATA}" -name "*.npz" | wc -l)
+echo "[$(date '+%H:%M:%S')] Test data staged: ${TEST_COUNT} files"
+
+# Also copy checkpoint to local scratch for faster I/O
+LOCAL_CKPT="/localscratch/vmat_ckpt_${SGE_TASK_ID}.ckpt"
+cp "${CHECKPOINT}" "${LOCAL_CKPT}"
+echo "[$(date '+%H:%M:%S')] Checkpoint copied to local scratch"
+
+# =============================================================================
+# ACTIVATE ENVIRONMENT
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Activating conda environment ..."
+
+if [[ -f "${HOME}/miniforge3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/miniforge3/etc/profile.d/conda.sh"
+elif [[ -f "${HOME}/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/miniconda3/etc/profile.d/conda.sh"
+elif command -v conda &>/dev/null; then
+    eval "$(conda shell.bash hook)"
+fi
+
+conda activate vmat-diffusion
+
+echo "Python: $(which python)"
+
+# =============================================================================
+# RUN INFERENCE
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Starting inference: ${RUN_NAME}"
+echo ""
+
+cd "${PROJECT_ROOT}"
+
+PRED_DIR="${LOCAL_PREDS}/${RUN_NAME}_test"
+mkdir -p "${PRED_DIR}"
+
+INFER_CMD="python scripts/inference_baseline_unet.py \
+    --checkpoint ${LOCAL_CKPT} \
+    --input_dir ${LOCAL_DATA} \
+    --output_dir ${PRED_DIR} \
+    --compute_metrics \
+    --overlap 64 \
+    --gamma_subsample 4"
+
+echo "Command: ${INFER_CMD}"
+echo ""
+
+INFER_START=$(date +%s)
+
+set +e
+eval "${INFER_CMD}"
+INFER_EXIT=$?
+set -e
+
+INFER_END=$(date +%s)
+INFER_DURATION=$(( (INFER_END - INFER_START) / 60 ))
+
+echo ""
+echo "[$(date '+%H:%M:%S')] Inference finished."
+echo "  Exit code: ${INFER_EXIT}"
+echo "  Duration:  ${INFER_DURATION} minutes"
+
+if [[ "${INFER_EXIT}" -ne 0 ]]; then
+    echo "WARNING: Inference exited with code ${INFER_EXIT}."
+fi
+
+# =============================================================================
+# COPY PREDICTIONS BACK to /nfsscratch
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Copying predictions to /nfsscratch ..."
+
+DEST_PREDS="${RESULTS_DIR}/predictions"
+mkdir -p "${DEST_PREDS}"
+
+if [[ -d "${PRED_DIR}" ]]; then
+    rsync -a --info=progress2 "${PRED_DIR}/" "${DEST_PREDS}/${RUN_NAME}_test/"
+    PRED_SIZE=$(du -sh "${DEST_PREDS}/${RUN_NAME}_test" | cut -f1)
+    echo "  Copied ${PRED_SIZE} to ${DEST_PREDS}/${RUN_NAME}_test/"
+
+    # Print evaluation results if they exist
+    EVAL_FILE="${DEST_PREDS}/${RUN_NAME}_test/evaluation_results.json"
+    if [[ -f "${EVAL_FILE}" ]]; then
+        echo ""
+        echo "  === Evaluation Results ==="
+        python -c "
+import json
+with open('${EVAL_FILE}') as f:
+    r = json.load(f)
+summary = r.get('summary', r)
+for k, v in summary.items():
+    if isinstance(v, float):
+        print(f'    {k}: {v:.4f}')
+    else:
+        print(f'    {k}: {v}')
+" 2>/dev/null || cat "${EVAL_FILE}"
+    fi
+else
+    echo "WARNING: No predictions directory to copy."
+fi
+
+# Save inference metadata
+cat > "${DEST_PREDS}/${RUN_NAME}_test/inference_metadata.json" << INFER_META_EOF
+{
+    "sge_job_id": "${JOB_ID}",
+    "sge_task_id": "${SGE_TASK_ID}",
+    "condition": "C${CONDITION_IDX}",
+    "run_name": "${RUN_NAME}",
+    "seed": ${SEED},
+    "checkpoint": "${CHECKPOINT}",
+    "test_cases": ${TEST_COUNT},
+    "overlap": 64,
+    "gamma_subsample": 4,
+    "hostname": "$(hostname)",
+    "start_time": "${TIMESTAMP}",
+    "end_time": "$(date '+%Y-%m-%d_%H%M%S')",
+    "infer_duration_min": ${INFER_DURATION},
+    "infer_exit_code": ${INFER_EXIT}
+}
+INFER_META_EOF
+
+# Copy log
+LOG_DEST="${RESULTS_DIR}/logs"
+mkdir -p "${LOG_DEST}"
+cp "${LOCAL_LOG}" "${LOG_DEST}/infer_${RUN_NAME}_${TIMESTAMP}.log" 2>/dev/null || true
+
+# =============================================================================
+# CLEANUP
+# =============================================================================
+echo ""
+echo "[$(date '+%H:%M:%S')] Cleaning up /localscratch ..."
+rm -rf "${LOCAL_DATA}" "${LOCAL_PREDS}" "${LOCAL_CKPT}"
+echo "  Done."
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+echo ""
+echo "=============================================="
+echo "INFERENCE COMPLETE"
+echo "=============================================="
+echo "Task:        ${SGE_TASK_ID} / C${CONDITION_IDX} / seed${SEED}"
+echo "Run:         ${RUN_NAME}"
+echo "Duration:    ${INFER_DURATION} minutes"
+echo "Exit:        ${INFER_EXIT}"
+echo "Predictions: ${DEST_PREDS}/${RUN_NAME}_test/"
+echo "Log:         ${LOG_DEST}/infer_${RUN_NAME}_${TIMESTAMP}.log"
+echo "=============================================="
+
+exit ${INFER_EXIT}
