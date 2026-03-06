@@ -8,12 +8,9 @@ __pycache__/
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
 # Jupyter / VS Code
-.ipynb_checkpoints
-*.ipynb_checkpoints/
+.ipynb_checkpoints/
 .vscode/
 .history
 
@@ -26,11 +23,8 @@ venv.bak/
 *.secret
 *.pem
 
-# Large data (never commit raw or processed medical imaging)
+# Medical imaging data (NEVER commit — PHI risk)
 data/
-data/raw/
-data/*.dcm
-data/*.DCM
 processed_npz/
 processed/
 processed_old*/
@@ -39,45 +33,36 @@ processed_old*/
 *.nii.gz
 *.dcm
 *.DCM
-*.pth  # PyTorch models
+
+# Model checkpoints and weights
+*.pth
+*.pt
 *.ckpt
+*.bin
+models/
 
 # Training outputs
 runs/
 predictions/
 figures/*.png
 figures/*.pdf
-
-# Model checkpoints and logs
-models/
-*.pth
-*.pt
-*.ckpt
-*.bin
 logs/
 wandb/
 tensorboard/
+*.log
 
 # OS / temp files
 .DS_Store
 Thumbs.db
 *.tmp
-*.log
+*.bak
 *:Zone.Identifier
 *.Zone.Identifier
+.gitignore~
 
-# Git
-.git
-.gitignore~  # Backup copies
-
-# Optional: ignore large downloads or caches
+# Caches
 downloads/
-cache/processed
-*.bak
+cache/
 
-# Log files
-*.log
-preprocess.log
-training_*.log
 # Local-only documents
 presentations/
