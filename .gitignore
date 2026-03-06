@@ -79,7 +79,5 @@ cache/processed
 *.log
 preprocess.log
 training_*.log
-# Local-only documents (assessments, presentations, literature reviews)
-docs/PROJECT_ASSESSMENT.md
-docs/LITERATURE_REVIEW.md
+# Local-only documents
 presentations/
