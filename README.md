@@ -7,34 +7,34 @@ Loss-function engineering for clinically acceptable prostate VMAT dose predictio
 This project predicts 3D radiation dose distributions for prostate cancer VMAT (Volumetric Modulated Arc Therapy) treatment planning. Given a patient's CT scan, organ contours, and clinical dose constraints, a 3D U-Net predicts the full dose volume.
 
 **Disease site:** Prostate cancer with SIB (70 Gy PTV70 / 56 Gy PTV56 in 28 fractions)
-**Current dataset:** 74 cases (v2.3 preprocessing), expecting ~161 from 2 institutions
+**Current dataset:** ~70 cases (v2.3 preprocessing), expecting ~200-250 from 2 institutions
 **Research focus:** Systematic evaluation of loss functions (gradient, DVH-aware, structure-weighted, asymmetric PTV) with learned uncertainty weighting (Kendall 2018), optimized for clinical acceptability rather than global pixel-wise accuracy.
 
 **Primary model:** BaselineUNet3D (~23.7M parameters) with constraint conditioning via FiLM embedding.
 
 ## Key Results
 
-### Baseline (v2.3 data, 3-seed aggregate, n=74 train/val, 7 test per seed)
+### Current Best: Combined Loss 2.5:1 (v2.3, 3-seed aggregate, 7 test cases)
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| MAE | 4.22 ± 0.53 Gy | Mean of 3 seed means |
-| Gamma 3%/3mm (global) | 33.8 ± 4.6% | Low due to valid low-dose diversity |
-| Gamma 3%/3mm (PTV-region) | 80.2 ± 5.3% | Clinically relevant region |
-| PTV70 D95 Gap | -1.76 ± 0.69 Gy | Systematic underdosing — target for Phase 2 |
+| Metric | Combined 2.5:1 | Baseline (MSE) | Δ |
+|--------|---------------|----------------|---|
+| MAE | 4.07 ± 0.64 Gy | 4.22 ± 0.53 Gy | -0.15 |
+| Gamma 3%/3mm (PTV-region) | **94.3 ± 2.2%** | 80.2 ± 5.3% | **+14.1** |
+| PTV70 D95 Gap | **+0.06 ± 0.26 Gy** | -1.76 ± 0.69 Gy | **+1.82** |
+| Gamma 3%/3mm (global) | 33.9% | 33.8 ± 4.6% | — |
 
-Seeds: 42, 123, 456. MSE-only loss. This establishes the baseline for the 16-condition loss ablation study.
+Seeds: 42, 123, 456. Combined loss uses all 5 components with uncertainty weighting (Kendall 2018). This establishes the baseline for the 10-condition loss ablation study.
 
-### Loss Components (implemented, Phase 2 combined experiment pending)
+### Loss Components
 
-| Component | Purpose |
-|-----------|---------|
-| MSE (baseline) | Voxel-wise accuracy |
-| Gradient Loss (3D Sobel) | Dose edge and penumbra realism |
-| DVH-Aware Loss | Clinical metric optimization (D95, Vx, Dmean) |
-| Structure-Weighted Loss | Prioritize PTV and OAR boundary regions |
-| Asymmetric PTV Loss | Penalize underdosing 3x more than overdosing |
-| Uncertainty Weighting | Learned per-component σ (Kendall 2018) |
+| Component | Purpose | Status |
+|-----------|---------|--------|
+| MSE (baseline) | Voxel-wise accuracy | Baseline condition |
+| Gradient Loss (3D Sobel) | Dose edge and penumbra realism | In combined |
+| DVH-Aware Loss | Clinical metric optimization (D95, Vx, Dmean) | In combined |
+| Structure-Weighted Loss | Prioritize PTV and OAR boundary regions | In combined |
+| Asymmetric PTV Loss | Penalize underdosing 3x more than overdosing | In combined |
+| Uncertainty Weighting | Learned per-component σ (Kendall 2018) | In combined |
 
 ## Quick Start
 
@@ -94,11 +94,12 @@ python scripts/inference_baseline_unet.py \
 vmat-diffusion/
 ├── scripts/                        # Training, inference, preprocessing, figures
 │   ├── train_baseline_unet.py      # Primary model trainer (all loss components)
-│   ├── inference_baseline_unet.py  # Inference + evaluation
+│   ├── inference_baseline_unet.py  # Inference + evaluation (per-structure MAE, DVH, gamma)
 │   ├── preprocess_dicom_rt_v2.3.py # DICOM-RT to NPZ (v2.3 crop pipeline)
 │   ├── uncertainty_loss.py         # UncertaintyWeightedLoss (Kendall 2018)
 │   ├── calibrate_loss_normalization.py # Loss calibration for initial sigmas
-│   └── generate_*_figures.py       # Publication figure scripts
+│   ├── generate_*_figures.py       # Publication figure scripts
+│   └── argon/                      # UIowa Argon HPC batch scripts (SGE)
 ├── notebooks/                      # Experiment notebooks (dated)
 │   ├── EXPERIMENTS_INDEX.md        # Master experiment log
 │   └── TEMPLATE_experiment.ipynb   # Template for new experiments
@@ -119,6 +120,7 @@ Training outputs (`runs/`), predictions (`predictions/`), and data (`processed/`
 | `CLAUDE.md` | Code conventions, architecture, experiment protocol |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log |
 | [GitHub Issues](https://github.com/wrockey/vmat-diffusion/issues) | Task tracking |
+| [Pinned Issue #63](https://github.com/wrockey/vmat-diffusion/issues/63) | Current status and critical path |
 
 ## Requirements
 
