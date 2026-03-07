@@ -75,8 +75,11 @@ from eval_statistics import NumpyEncoder
 def load_model(checkpoint_path: str, device: str = 'cuda') -> DoseDDPM:
     """Load trained model from checkpoint."""
     print(f"Loading model from {checkpoint_path}")
-    
-    model = DoseDDPM.load_from_checkpoint(checkpoint_path, map_location=device)
+
+    # Manual loading to avoid fsspec IsADirectoryError with some path formats
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    model = DoseDDPM(**checkpoint['hyper_parameters'])
+    model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     model.to(device)
     
