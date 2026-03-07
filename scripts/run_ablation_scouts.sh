@@ -7,11 +7,20 @@
 # Expected runtime: ~40 hours total (~5 hours per condition)
 #
 # Usage:
+#   tmux new -s ablation
 #   bash scripts/run_ablation_scouts.sh           # Run all 8
 #   bash scripts/run_ablation_scouts.sh C3 C5     # Run specific conditions
+#
+# Resume after partial failure:
+#   bash scripts/run_ablation_scouts.sh C5 C7 C8 C9 C10
+#   (post-processing always covers ALL conditions with eval data, not just
+#    the current invocation, so resume is safe)
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: -e intentionally omitted. We handle errors per-condition so one
+# failure doesn't kill the entire 40-hour batch. Critical failures (git
+# dirty, missing data) exit explicitly.
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -29,6 +38,16 @@ COMMON_TRAIN="--data_dir $DATA_DIR --epochs $EPOCHS --seed $SEED --num_workers 2
 
 # Common inference args
 COMMON_INFER="--input_dir $TEST_DIR --compute_metrics --overlap 64 --gamma_subsample 4"
+
+# ---- Logging ----
+
+LOG_DIR="$PROJECT_ROOT/runs/ablation_scouts"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/batch_$(date '+%Y%m%d_%H%M%S').log"
+
+# Tee all output to log file AND console
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "Log file: $LOG_FILE"
 
 # Track overall progress
 STARTED_AT=$(date '+%Y-%m-%d %H:%M')
@@ -77,7 +96,7 @@ gh_comment() {
 
 find_best_checkpoint() {
     local run_dir="$1"
-    find "$run_dir/checkpoints" -name "best-*.ckpt" -not -name "last*" | head -1
+    find "$run_dir/checkpoints" -name "best-*.ckpt" -not -name "last*" 2>/dev/null | head -1
 }
 
 # Extract metrics from evaluation results JSON (computes from per-case data)
@@ -115,7 +134,7 @@ else:
     print(f'Global Gamma: {gg_m:.1f} +/- {gg_s:.1f}%')
     print(f'PTV Gamma: {pg_m:.1f} +/- {pg_s:.1f}%')
     print(f'PTV70 D95 Gap: {d95_m:+.2f} +/- {d95_s:.2f} Gy')
-"
+" 2>/dev/null || echo "| [metric extraction failed] | — | — | — |"
 }
 
 run_inference() {
@@ -137,10 +156,10 @@ run_inference() {
         $COMMON_INFER \
         --output_dir "$pred_dir"
 
-    # Print metrics to console
+    # Print metrics to console (non-fatal if extraction fails)
     local eval_file="$pred_dir/baseline_evaluation_results.json"
     if [ -f "$eval_file" ]; then
-        extract_metrics "$eval_file" "summary"
+        extract_metrics "$eval_file" "summary" || true
     fi
 }
 
@@ -150,12 +169,12 @@ post_results() {
     local eval_file="predictions/${exp_name}_seed${SEED}_test/baseline_evaluation_results.json"
 
     if [ ! -f "$eval_file" ]; then
-        gh_comment "### $condition — No evaluation results found"
+        gh_comment "### $condition — No evaluation results found" || true
         return
     fi
 
     local metrics
-    metrics=$(extract_metrics "$eval_file" "table")
+    metrics=$(extract_metrics "$eval_file" "table") || metrics="| [extraction failed] | — | — | — |"
 
     gh_comment "### $condition complete
 
@@ -163,7 +182,7 @@ post_results() {
 |----------|--------------|-----------|--------------|
 $metrics
 
-Run dir: \`runs/${exp_name}_seed${SEED}/\`"
+Run dir: \`runs/${exp_name}_seed${SEED}/\`" || true
 }
 
 run_condition() {
@@ -177,7 +196,7 @@ run_condition() {
 \`\`\`
 $PYTHON scripts/train_baseline_unet.py $COMMON_TRAIN --exp_name $exp_name $train_flags
 \`\`\`
-Started: $(date '+%Y-%m-%d %H:%M')"
+Started: $(date '+%Y-%m-%d %H:%M')" || true
 
     # Train
     if $PYTHON scripts/train_baseline_unet.py $COMMON_TRAIN --exp_name "$exp_name" $train_flags; then
@@ -189,11 +208,11 @@ Started: $(date '+%Y-%m-%d %H:%M')"
             post_results "$condition" "$exp_name"
             COMPLETED+=("$condition")
         else
-            gh_comment "### $condition — Inference failed"
+            gh_comment "### $condition — Inference failed" || true
             FAILED+=("$condition (inference)")
         fi
     else
-        gh_comment "### $condition — Training failed"
+        gh_comment "### $condition — Training failed" || true
         FAILED+=("$condition (training)")
     fi
 }
@@ -257,6 +276,9 @@ run_C10() {
 }
 
 # ---- Post-processing ----
+# These functions scan for ALL available evaluation data on disk,
+# not just the current invocation's COMPLETED list. This means
+# resume runs correctly produce full comparison tables/figures.
 
 update_experiments_index() {
     log "POST-PROCESSING: Updating EXPERIMENTS_INDEX.md"
@@ -264,14 +286,18 @@ update_experiments_index() {
     local today
     today=$(date '+%Y-%m-%d')
 
-    for cond in "${COMPLETED[@]}"; do
-        local cond_id="${cond%% *}"  # e.g. "C2" from "C2 (MSE+Gradient)"
+    for cond_id in C2 C3 C4 C5 C7 C8 C9 C10; do
         local exp_name="${CONDITION_NAMES[$cond_id]}"
         local label="${CONDITION_LABELS[$cond_id]}"
         local eval_file="predictions/${exp_name}_seed${SEED}_test/baseline_evaluation_results.json"
 
         if [ ! -f "$eval_file" ]; then
-            echo "[WARN] No eval file for $cond_id — skipping index update"
+            continue
+        fi
+
+        # Check if entry already exists (avoid duplicates)
+        if grep -q "$exp_name" "$index_file" 2>/dev/null; then
+            echo "[SKIP] $cond_id already in EXPERIMENTS_INDEX.md"
             continue
         fi
 
@@ -301,17 +327,15 @@ d95_m = np.mean(d95_gaps) if d95_gaps else float('nan')
 d95_s = np.std(d95_gaps) if d95_gaps else float('nan')
 
 print(f'| $today | $cond_id $label (seed42) | \`$GIT_HASH\` | — | BaselineUNet3D | {mae_m:.2f} +/- {mae_s:.2f} (test, n={len(cases)}) | {gg_m:.1f} +/- {gg_s:.1f}% (global), {pg_m:.1f} +/- {pg_s:.1f}% (PTV) | {d95_m:+.2f} +/- {d95_s:.2f} Gy | Preliminary |')
-")
+" 2>/dev/null) || {
+            echo "[WARN] Failed to extract metrics for $cond_id"
+            continue
+        }
 
-        # Check if entry already exists (avoid duplicates)
-        if grep -q "$exp_name" "$index_file" 2>/dev/null; then
-            echo "[SKIP] $cond_id already in EXPERIMENTS_INDEX.md"
-        else
-            # Insert before the "In Progress" section marker
-            sed -i "/^### v2.3 Experiments — In Progress/i\\
+        # Insert before the "In Progress" section marker
+        sed -i "/^### v2.3 Experiments — In Progress/i\\
 $row" "$index_file"
-            echo "[OK] Added $cond_id to EXPERIMENTS_INDEX.md"
-        fi
+        echo "[OK] Added $cond_id to EXPERIMENTS_INDEX.md"
     done
 }
 
@@ -331,6 +355,7 @@ post_summary_table() {
     log "POST-PROCESSING: Posting summary table to GH"
 
     # Build a comprehensive comparison table including C1 and C6
+    # Scans ALL available eval data on disk (not just current invocation)
     local table
     table=$($PYTHON -c "
 import json, numpy as np
@@ -376,13 +401,18 @@ print('| ID | Condition | MAE (Gy) | Global Gamma | PTV Gamma | D95 Gap |')
 print('|----|-----------|----------|--------------|-----------|---------|')
 for row in rows:
     print(row)
-")
+" 2>/dev/null) || {
+        echo "[WARN] Failed to generate summary table"
+        return
+    }
 
     gh_comment "## Full C1-C10 Scout Comparison (seed42, 70 cases)
 
 $table
 
-**Note:** C1 and C6 are existing 3-seed experiments shown here at seed42 only for comparison. All results are preliminary (single-seed, 70-case dataset)."
+**Note:** C1 and C6 are existing 3-seed experiments shown here at seed42 only for comparison. All results are preliminary (single-seed, 70-case dataset).
+
+**Log file:** \`$LOG_FILE\`" || true
 }
 
 # ---- Main ----
@@ -403,12 +433,35 @@ fi
 
 GIT_HASH=$(git rev-parse --short HEAD)
 
+# Check disk space (need ~2 GB per condition for checkpoints + predictions)
+AVAIL_GB=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | tr -d 'G')
+NEEDED_GB=$((${#CONDITIONS[@]} * 2))
+if [ "$AVAIL_GB" -lt "$NEEDED_GB" ]; then
+    echo "[WARN] Only ${AVAIL_GB}G available, need ~${NEEDED_GB}G for ${#CONDITIONS[@]} conditions"
+    echo "       (2 GB per condition: checkpoints + predictions)"
+fi
+
+# Warn if not in tmux/screen
+if [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  WARNING: Not running inside tmux or screen!"
+    echo "  This batch takes ~40 hours. If your terminal closes, it dies."
+    echo "  Recommended: tmux new -s ablation"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo ""
+    echo "Press Enter to continue anyway, or Ctrl+C to abort..."
+    read -r
+fi
+
 log "ABLATION SCOUT BATCH — Starting"
 echo "Conditions: ${CONDITIONS[*]}"
 echo "Git hash:   $GIT_HASH"
 echo "Seed:       $SEED"
 echo "Data dir:   $DATA_DIR"
 echo "Test dir:   $TEST_DIR"
+echo "Log file:   $LOG_FILE"
+echo "Disk avail: ${AVAIL_GB}G"
 echo ""
 
 gh_comment "## Ablation Scout Batch Started
@@ -418,8 +471,9 @@ gh_comment "## Ablation Scout Batch Started
 **Seed:** $SEED
 **Dataset:** 70 cases (v2.3 preliminary)
 **Started:** $STARTED_AT
+**Log file:** \`$LOG_FILE\`
 
-Each condition will post results as it completes."
+Each condition will post results as it completes." || true
 
 # ---- Run all conditions ----
 
@@ -447,16 +501,11 @@ echo "Finished:  $FINISHED_AT"
 echo "Completed: ${COMPLETED[*]:-none}"
 echo "Failed:    ${FAILED[*]:-none}"
 
-if [ ${#COMPLETED[@]} -gt 0 ]; then
-    # Update EXPERIMENTS_INDEX.md
-    update_experiments_index
-
-    # Generate comparison figures
-    generate_figures
-
-    # Post full C1-C10 comparison table to GH
-    post_summary_table
-fi
+# Post-processing scans ALL available data on disk, so it works
+# correctly even on resume runs
+update_experiments_index || true
+generate_figures || true
+post_summary_table || true
 
 # ---- Final summary ----
 
@@ -471,6 +520,7 @@ SUMMARY="## Ablation Scout Batch Complete
 - EXPERIMENTS_INDEX.md: updated
 - Figures: generated to \`runs/ablation_scouts/figures/\`
 - Full comparison table: posted above
+- Log file: \`$LOG_FILE\`
 
 ### Remaining documentation (manual)
 - [ ] Create notebook: \`notebooks/$(date '+%Y-%m-%d')_ablation_scouts_preliminary.ipynb\`
@@ -478,8 +528,10 @@ SUMMARY="## Ablation Scout Batch Complete
 - [ ] Commit documentation artifacts
 - [ ] Update pinned issue #63 if results change the narrative"
 
-gh_comment "$SUMMARY"
+gh_comment "$SUMMARY" || true
 
 if [ ${#FAILED[@]} -gt 0 ]; then
+    echo ""
+    echo "FAILED CONDITIONS: ${FAILED[*]}"
     exit 1
 fi
