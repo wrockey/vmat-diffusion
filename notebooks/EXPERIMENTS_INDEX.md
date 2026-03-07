@@ -28,10 +28,11 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 | 2026-03-05 | Combined loss 2.5:1 (seed456) | `900a977` | — | BaselineUNet3D | 4.04 ± 2.43 (test, n=7) | 35.5 ± 4.5% (global), 96.6 ± 2.8% (PTV) | +0.35 ± 0.66 Gy | Preliminary |
 | 2026-03-05 | **Combined loss 2.5:1 (3-seed aggregate)** | `900a977` | [notebook](2026-03-05_combined_loss_2.5to1_aggregate.ipynb) | BaselineUNet3D | **4.07 ± 0.64** (seed mean±std) | **30.4 ± 3.6%** (global), **94.3 ± 2.2%** (PTV) | **+0.06 ± 0.26 Gy** | Complete |
 | 2026-03-05 | Anatomical variability analysis | `0ff2dcc` | [notebook](2026-03-05_anatomical_variability.ipynb) | Analysis | N/A | N/A | N/A | Complete |
+| 2026-03-07 | DDPM v2.3 (seed42) | `adfb840` | [notebook](2026-03-07_ddpm_v23_preliminary.ipynb) | DoseDDPM | 9.04 ± 1.95 (test, n=7) | 9.2 ± 2.1% (global), 0.0% (PTV) | -65.5 ± 0.8 Gy | Preliminary (NEGATIVE) |
 
 ### v2.3 Experiments — In Progress
 
-*Combined loss 2.5:1 3-seed run COMPLETE (#14). PTV gamma 94.3±2.2% (near 95% target), D95 gap essentially zero (+0.06±0.26 Gy). Massive improvement over baseline (80.2% → 94.3% PTV gamma, -1.76 → +0.06 D95). Next: dataset expansion, outlier investigation, publication prep.*
+*DDPM re-evaluation (#49) COMPLETE — negative result. DDPM predicts ~10% of target PTV dose, catastrophically worse than baseline on all metrics. Focus remains on combined_loss_2.5:1 + dataset expansion.*
 
 ### Pilot Experiments (v2.2.0 — metrics invalid)
 
@@ -76,4 +77,4 @@ For code conventions and experiment protocol: see `CLAUDE.md`.
 
 **For project strategy, next steps, and planning: see `.claude/instructions.md`**
 
-*Last updated: 2026-03-05*
+*Last updated: 2026-03-07*
