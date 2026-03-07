@@ -82,6 +82,7 @@ Update the board **immediately** when issue status changes — not at end of ses
 |----------|--------|--------|-----------|
 | CRITICAL | PTV70 D95 | >= 66.5 Gy | Prostate coverage |
 | CRITICAL | PTV56 D95 | >= 53.2 Gy | Seminal vesicle coverage |
+| CRITICAL | PTV50.4 D95 | >= 47.88 Gy | Nodal coverage (when present) |
 | CRITICAL | OAR DVH compliance | Per QUANTEC | Organ sparing |
 | HIGH | PTV-region Gamma 3%/3mm | > 95% | Accuracy where it matters |
 | HIGH | Dose gradient realism | Monotonic falloff, ~6mm penumbra | Deliverability proxy |
@@ -120,10 +121,19 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 
 ### Study Design
 
-**Title:** "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"
+**Title:** "Multi-protocol prostate VMAT dose prediction via clinical loss engineering and constraint conditioning"
 **Target journal:** Medical Physics
-**Dataset:** ~91 2-level SIB cases from 2 institutions (Amendment 3, 2026-03-07, #39). Inclusion: PTV70+PTV56 only, no PTV50.4 nodal target, complete DICOM-RT. PTV50.4 cases excluded due to different beam arrangements producing confounding OAR dose distributions and confirmed dose hallucination in preliminary training. Original estimate was ~161; see #39 for full rationale.
-**Split (#38):** ~80/10/10 train/val/test, stratified by institution + PTV70 volume tertile, locked before training.
+**Dataset:** ~200 cases from 2 institutions, 3 plan types (Amendment 4, 2026-03-07, #39, #66).
+
+> **Amendment 4 (2026-03-07):** Reversed PTV50.4 exclusion. Adding PTV50.4 as 9th SDF input channel (#66) and fixing absent-structure SDF convention to 0.0 (#67) enables training on all ~200 cases. The dose hallucination that motivated the original exclusion was caused by (a) missing spatial input for PTV50.4 and (b) SDF=+1.0 for absent structures being indistinguishable from "far away." Both are now fixed. See #66, #67, #68 for implementation.
+
+| Plan Type | N | Targets |
+|-----------|---|---------|
+| 2-level SIB | ~91 | PTV70 + PTV56 |
+| 3-level SIB | ~40 | PTV70 + PTV56 + PTV50.4 |
+| Nodal-only | ~62 | PTV70 + PTV50.4 |
+
+**Split (#69):** ~80/10/10 train/val/test, stratified by plan type + institution + PTV70 volume tertile, locked before training.
 
 ### Experimental Conditions (#43)
 
@@ -141,16 +151,17 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 | 8 | Full - DVH | Ablation |
 | 9 | Full - Structure | Ablation |
 | 10 | Full - AsymPTV | Ablation |
+| 11 | Full combined, FiLM disabled | FiLM ablation (#71) |
 
-**Architecture comparison (C11-C16): DESCOPED (Amendment 2, 2026-03-06)**
+**Architecture comparison: DESCOPED (Amendment 2, 2026-03-06)**
 
-> Single-seed scouts of C11 (Attention), C13 (BottleneckAttn), C15 (WiderBaseline) showed no improvement over baseline on 70 cases. Architecture is not the bottleneck. Moved to backburner (#53). Run only if reviewer requests — if so, C11+C12 (AttentionUNet MSE vs Full) as a 6-run supplement.
+> Single-seed scouts showed no improvement over baseline on 70 cases. Architecture is not the bottleneck. Moved to backburner (#53). Run only if reviewer requests.
 
-**Final plan: 10 conditions x 3 seeds = 30 runs (~135 GPU-hours). Argon scripts: #62.**
+**Final plan: 11 conditions x 3 seeds = 33 runs (~150 GPU-hours). Argon scripts: #62.**
 
 ### Metrics
 
-**Primary:** PTV70 D95 error (<2 Gy), PTV56 D95 error (<2 Gy), OAR DVH compliance (>90%).
+**Primary:** PTV70 D95 error (<2 Gy), PTV56 D95 error (<2 Gy), PTV50.4 D95 error (<2 Gy, when present), OAR DVH compliance (>90%).
 **Secondary:** PTV-region Gamma 3%/3mm, MAE (Gy), per-structure Dmean error.
 **Diagnostic:** Global Gamma 3%/3mm, Global Gamma 2%/2mm.
 
@@ -181,7 +192,8 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 
 ~~Secondary: Train on B only -> test on A; train on A+B -> test (standard). Report gap.~~
 
-**Amendment 3 (2026-03-07):** Revised to single-institution (B, N≈86) with external validation (U, N=6). Only 6 Institution U cases meet PTV70/PTV56-only criteria — insufficient for cross-institutional training arm. The 6 U cases serve as held-out external generalizability check. See #39.
+**Amendment 3 (2026-03-07):** Revised to single-institution (B) with external validation (U).
+**Amendment 4 (2026-03-07):** With multi-protocol expansion, Institution U contributes ~70 cases across plan types. Cross-institutional split may now be viable — reassess after QA review (#64) confirms per-institution counts by plan type. If U has sufficient cases per type, restore cross-institutional training arm.
 
 ---
 

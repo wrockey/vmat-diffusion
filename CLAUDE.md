@@ -4,9 +4,9 @@
 
 VMAT Diffusion is a deep learning research project for automated **Volumetric Modulated Arc Therapy (VMAT) dose prediction** in radiation therapy. It uses a 3D U-Net with clinical loss engineering to predict dose distributions from patient CT scans, organ contours, and clinical dose constraints. A DDPM (diffusion model) was evaluated and rejected.
 
-**Disease site:** Prostate cancer with SIB (70 Gy PTV70=prostate / 56 Gy PTV56=seminal vesicles in 28 fractions)
-**Current dataset:** ~74 cases (v2.3), expecting ~91 2-level SIB cases after filtering
-**Clinical targets (updated 2026-02-17):** PTV70 D95 >= 66.5 Gy, PTV56 D95 >= 53.2 Gy, OAR DVH compliance, PTV-region Gamma > 95%. Global Gamma tracked as diagnostic only — see `.claude/instructions.md` for full priority table.
+**Disease site:** Prostate cancer with SIB — 3 plan types: PTV70+PTV56, PTV70+PTV56+PTV50.4, PTV70+PTV50.4 (28 fractions)
+**Current dataset:** ~200 cases (v2.4 pending, #68), 3 plan types across 2 institutions
+**Clinical targets:** PTV70 D95 >= 66.5 Gy, PTV56 D95 >= 53.2 Gy, PTV50.4 D95 >= 47.88 Gy (when present), OAR DVH compliance, PTV-region Gamma > 95%. Global Gamma tracked as diagnostic only — see `.claude/instructions.md` for full priority table.
 
 ## Repository Structure
 
@@ -17,7 +17,7 @@ vmat-diffusion/
 │   ├── train_dose_ddpm_v2.py         # DDPM trainer (not recommended currently)
 │   ├── inference_baseline_unet.py    # Baseline model inference + evaluation
 │   ├── inference_dose_ddpm.py        # DDPM inference + evaluation
-│   ├── preprocess_dicom_rt_v2.3.py   # DICOM-RT → NPZ preprocessing
+│   ├── preprocess_dicom_rt_v2.3.py   # DICOM-RT → NPZ preprocessing (v2.4 update pending #66/#67)
 │   ├── run_phase1_experiments.py     # Sampling/ensemble ablation
 │   ├── analyze_gamma_metric_hypothesis.py
 │   ├── compute_test_metrics.py       # Standalone test evaluation
@@ -44,6 +44,7 @@ vmat-diffusion/
 │   └── README.md
 ├── paper/                            # Manuscript preparation
 │   ├── outline.md                    # Section-by-section paper outline
+│   ├── assessment.md                 # Publishability review, cross-refs GitHub #76
 │   ├── notes.md                      # Running ideas, reviewer anticipation
 │   ├── figures/                      # Final publication figures (mapped to sources)
 │   ├── supplemental/                 # Supplemental material inventory
@@ -126,23 +127,25 @@ python scripts/train_dose_ddpm_v2.py --data_dir /path/to/processed_npz --epochs 
 ## Architecture Overview
 
 ### Data Pipeline
-- **Input:** CT (1 channel) + Signed Distance Fields for 8 structures (8 channels) = 9 input channels
+- **Input:** CT (1 channel) + Signed Distance Fields for 9 structures (9 channels) = 10 input channels
 - **Output:** 3D dose distribution (1 channel)
 - **Constraints:** 13-dimensional vector (prescription doses + OAR limits)
-- **Preprocessing (v2.3):** CT and masks kept at native resolution; dose resampled to CT grid (B-spline); all volumes cropped to ~300×300×Z centered on prostate. Variable output shape per patient.
+- **Preprocessing (v2.4, #68):** CT and masks kept at native resolution; dose resampled to CT grid (B-spline); all volumes cropped to ~300×300×Z centered on prostate. Variable output shape per patient. Absent structures use SDF=0.0 (not +1.0) to distinguish "doesn't exist" from "far away" (#67).
 - **Patch size:** 128³ voxels during training, sliding window for full-volume inference
-- **Data split:** 80/10/10 (train/val/test)
+- **Data split:** 80/10/10 (train/val/test), stratified by plan type + institution + PTV70 volume (#69)
 
-### 8 Anatomical Structures (SDF channels)
-0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder, 5: Femur_L, 6: Femur_R, 7: Bowel
+### 9 Anatomical Structures (SDF channels)
+0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder, 5: Femur_L, 6: Femur_R, 7: Bowel, 8: PTV50.4
+
+**Absent-structure convention:** SDF = 0.0 everywhere (not +1.0). This distinguishes "structure doesn't exist" from "far from structure." See #67.
 
 ### NPZ Data Format (v2.3.0)
 ```python
 {
     'ct': (Y, X, Z) float32,              # Normalized [0,1], native resolution cropped
     'dose': (Y, X, Z) float32,            # Normalized to Rx, on CT grid cropped
-    'masks': (8, Y, X, Z) uint8,          # Binary masks, native grid cropped
-    'masks_sdf': (8, Y, X, Z) float32,    # Signed distance fields [-1,1]
+    'masks': (9, Y, X, Z) uint8,          # Binary masks, native grid cropped (9 structures)
+    'masks_sdf': (9, Y, X, Z) float32,    # Signed distance fields [-1,1]; 0.0 = absent
     'constraints': (13,) float32,          # [Rx, OAR limits...]
     'metadata': dict,                      # Case info, spacing, crop, validation
 }
