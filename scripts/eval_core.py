@@ -35,11 +35,12 @@ STRUCTURE_CHANNELS: Dict[int, str] = {
     5: 'Femur_L',
     6: 'Femur_R',
     7: 'Bowel',
+    8: 'PTV50.4',
 }
 
 STRUCTURE_INDEX: Dict[str, int] = {v: k for k, v in STRUCTURE_CHANNELS.items()}
 
-PTV_STRUCTURES: List[str] = ['PTV70', 'PTV56']
+PTV_STRUCTURES: List[str] = ['PTV70', 'PTV56', 'PTV50.4']
 OAR_STRUCTURES: List[str] = ['Rectum', 'Bladder', 'Femur_L', 'Femur_R', 'Bowel']
 ALL_STRUCTURES: List[str] = list(STRUCTURE_CHANNELS.values())
 
@@ -52,6 +53,7 @@ DEFAULT_SPACING_MM: Tuple[float, float, float] = (1.0, 1.0, 2.0)
 
 PRIMARY_PRESCRIPTION_GY: float = 70.0
 SECONDARY_PRESCRIPTION_GY: float = 56.0
+TERTIARY_PRESCRIPTION_GY: float = 50.4
 
 # Minimum voxels for reliable percentile-based metrics
 MIN_VOXELS_RELIABLE: int = 100
@@ -96,8 +98,8 @@ class CaseData:
     case_id: str
     ct: np.ndarray              # (Y, X, Z) float32
     dose: np.ndarray            # (Y, X, Z) float32, normalized [0, 1]
-    masks: np.ndarray           # (8, Y, X, Z) uint8 binary masks
-    masks_sdf: np.ndarray       # (8, Y, X, Z) float32 signed distance fields
+    masks: np.ndarray           # (9, Y, X, Z) uint8 binary masks
+    masks_sdf: np.ndarray       # (9, Y, X, Z) float32 signed distance fields
     spacing_mm: Tuple[float, float, float]
     metadata: dict
     constraints: Optional[np.ndarray] = None  # (13,) float32
@@ -149,8 +151,8 @@ def get_structure_mask(masks: np.ndarray, structure_name: str) -> np.ndarray:
     Get boolean mask for a structure by name.
 
     Args:
-        masks: (8, Y, X, Z) binary mask array
-        structure_name: e.g. 'PTV70', 'Rectum'
+        masks: (9, Y, X, Z) binary mask array
+        structure_name: e.g. 'PTV70', 'Rectum', 'PTV50.4'
 
     Returns:
         Boolean mask (Y, X, Z)

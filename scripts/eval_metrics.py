@@ -28,6 +28,7 @@ from eval_core import (
     DEFAULT_SPACING_MM,
     PRIMARY_PRESCRIPTION_GY,
     SECONDARY_PRESCRIPTION_GY,
+    TERTIARY_PRESCRIPTION_GY,
     MIN_VOXELS_RELIABLE,
     EvaluationResult,
     denormalize_dose,
@@ -100,7 +101,7 @@ def compute_per_structure_mae(
     Args:
         pred_gy: Predicted dose in Gy
         target_gy: Ground truth dose in Gy
-        masks: (8, Y, X, Z) binary masks
+        masks: (9, Y, X, Z) binary masks
 
     Returns:
         Dict mapping structure name to MAE in Gy
@@ -314,7 +315,7 @@ def compute_ptv_region_gamma(
     Args:
         pred_gy: Predicted dose in Gy
         target_gy: Ground truth dose in Gy
-        masks: (8, Y, X, Z) binary masks
+        masks: (9, Y, X, Z) binary masks
         spacing_mm: Voxel spacing in mm
         margin_mm: Expansion margin in mm
         subsample: Subsample factor
@@ -325,15 +326,12 @@ def compute_ptv_region_gamma(
     """
     from scipy.ndimage import binary_dilation
 
-    # Combine PTV masks
-    ptv70_idx = STRUCTURE_INDEX['PTV70']
-    ptv56_idx = STRUCTURE_INDEX['PTV56']
-
+    # Combine all PTV masks
     ptv_mask = np.zeros(masks.shape[1:], dtype=bool)
-    if ptv70_idx < masks.shape[0]:
-        ptv_mask |= (masks[ptv70_idx] > 0)
-    if ptv56_idx < masks.shape[0]:
-        ptv_mask |= (masks[ptv56_idx] > 0)
+    for ptv_name in PTV_STRUCTURES:
+        ptv_idx = STRUCTURE_INDEX[ptv_name]
+        if ptv_idx < masks.shape[0]:
+            ptv_mask |= (masks[ptv_idx] > 0)
 
     if not ptv_mask.any():
         return {'gamma_pass_rate': None, 'error': 'no PTV voxels',
@@ -385,7 +383,7 @@ def compute_dvh_metrics(
     Args:
         pred_gy: Predicted dose in Gy
         target_gy: Ground truth dose in Gy
-        masks: (8, Y, X, Z) binary masks
+        masks: (9, Y, X, Z) binary masks
         spacing_mm: Voxel spacing in mm
         rx_dose_gy: Primary prescription dose for normalization context
 
@@ -461,10 +459,23 @@ def compute_dvh_metrics(
             metrics['target_V45_cc'] = target_v45_cc
             metrics['V45_cc_error'] = round(pred_v45_cc - target_v45_cc, 4)
 
-        # --- V95 for PTVs (% volume receiving >= 95% of structure's Rx) ---
+        # --- PTV coverage metrics (V100 and V95) ---
         if name in PTV_STRUCTURES:
-            struct_rx = (PRIMARY_PRESCRIPTION_GY if name == 'PTV70'
-                         else SECONDARY_PRESCRIPTION_GY)
+            if name == 'PTV70':
+                struct_rx = PRIMARY_PRESCRIPTION_GY
+            elif name == 'PTV56':
+                struct_rx = SECONDARY_PRESCRIPTION_GY
+            else:
+                struct_rx = TERTIARY_PRESCRIPTION_GY
+
+            # V100: % volume receiving >= 100% of Rx (clinical acceptance criterion)
+            pred_v100 = float((pred_struct >= struct_rx).sum() / n_voxels * 100)
+            target_v100 = float((target_struct >= struct_rx).sum() / n_voxels * 100)
+            metrics['pred_V100'] = pred_v100
+            metrics['target_V100'] = target_v100
+            metrics['V100_error'] = round(pred_v100 - target_v100, 4)
+
+            # V95: % volume receiving >= 95% of Rx (diagnostic, not acceptance)
             threshold_95 = 0.95 * struct_rx
             pred_v95 = float((pred_struct >= threshold_95).sum() / n_voxels * 100)
             target_v95 = float((target_struct >= threshold_95).sum() / n_voxels * 100)
@@ -498,7 +509,7 @@ def evaluate_case(
     Args:
         pred_normalized: Predicted dose, normalized [0, 1]
         target_normalized: Ground truth dose, normalized [0, 1]
-        masks: (8, Y, X, Z) binary masks
+        masks: (9, Y, X, Z) binary masks
         spacing_mm: Voxel spacing (y, x, z) in mm
         case_id: Case identifier
         rx_dose_gy: Prescription dose in Gy

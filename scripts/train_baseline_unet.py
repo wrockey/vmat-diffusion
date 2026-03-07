@@ -10,7 +10,7 @@ with the DDPM model. Same architecture, but:
 Purpose: Answer "Is diffusion actually helping?" by providing a baseline.
 
 Version: 1.0
-Compatible with: preprocess_dicom_rt_v2.3.py output
+Compatible with: preprocess_dicom_rt_v2.4.py output (9 SDF channels + CT = 10 input channels)
 
 Usage:
     python train_baseline_unet.py --data_dir ./processed_npz --epochs 200
@@ -502,7 +502,7 @@ class DVHAwareLoss(nn.Module):
 
     Structure indices (from STRUCTURE_CHANNELS):
         0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder,
-        5: Femur_L, 6: Femur_R, 7: Bowel
+        5: Femur_L, 6: Femur_R, 7: Bowel, 8: PTV50.4
     """
 
     def __init__(
@@ -546,18 +546,19 @@ class DVHAwareLoss(nn.Module):
         """
         Extract structure masks from condition tensor SDFs.
 
-        The condition tensor has channels: [CT, SDF_0, SDF_1, ..., SDF_7]
+        The condition tensor has channels: [CT, SDF_0, SDF_1, ..., SDF_8]
         SDFs are signed distance fields where SDF < 0 means inside the structure.
+        Absent structures have SDF = 0.0 everywhere (v2.4 convention).
 
         Args:
-            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+            condition: (B, 10, H, W, D) tensor with CT + 9 SDF channels
 
         Returns:
             Dict mapping structure names to boolean masks (B, H, W, D)
         """
         masks = {}
         structure_names = ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder',
-                          'Femur_L', 'Femur_R', 'Bowel']
+                          'Femur_L', 'Femur_R', 'Bowel', 'PTV50.4']
 
         for idx, name in enumerate(structure_names):
             # SDF channels start at index 1 (index 0 is CT)
@@ -734,7 +735,7 @@ class DVHAwareLoss(nn.Module):
         Args:
             pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
             target: (B, 1, H, W, D) target dose (normalized 0-1)
-            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+            condition: (B, 10, H, W, D) condition tensor (CT + SDFs)
 
         Returns:
             Tuple of (total_loss, metrics_dict)
@@ -776,6 +777,20 @@ class DVHAwareLoss(nn.Module):
             metrics['dvh/ptv56_d95_pred'] = pred_d95_ptv56.mean()
             metrics['dvh/ptv56_d95_target'] = target_d95_ptv56.mean()
             metrics['dvh/ptv56_d95_loss'] = loss_d95_ptv56
+
+        # PTV50.4 D95 (tertiary target, lower weight)
+        if masks['PTV50.4'].any():
+            pred_d95_ptv504 = self.soft_d95_histogram(pred, masks['PTV50.4'])
+            target_d95_ptv504 = self.soft_d95_histogram(target, masks['PTV50.4'])
+
+            d95_deficit_ptv504 = F.relu(target_d95_ptv504 - pred_d95_ptv504)
+            loss_d95_ptv504 = d95_deficit_ptv504.mean()
+
+            # Lower weight for tertiary PTV
+            total_loss = total_loss + (self.d95_weight * 0.3) * loss_d95_ptv504
+            metrics['dvh/ptv504_d95_pred'] = pred_d95_ptv504.mean()
+            metrics['dvh/ptv504_d95_target'] = target_d95_ptv504.mean()
+            metrics['dvh/ptv504_d95_loss'] = loss_d95_ptv504
 
         # --- OAR Vx constraint losses ---
         # Penalize if Vx exceeds clinical limits
@@ -874,7 +889,7 @@ class StructureWeightedLoss(nn.Module):
         Extract structure masks from condition tensor SDFs.
 
         Args:
-            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+            condition: (B, 10, H, W, D) tensor with CT + 9 SDF channels
 
         Returns:
             Dict mapping structure names to masks/SDFs
@@ -882,7 +897,7 @@ class StructureWeightedLoss(nn.Module):
         masks = {}
         sdfs = {}
         structure_names = ['PTV70', 'PTV56', 'Prostate', 'Rectum', 'Bladder',
-                          'Femur_L', 'Femur_R', 'Bowel']
+                          'Femur_L', 'Femur_R', 'Bowel', 'PTV50.4']
 
         for idx, name in enumerate(structure_names):
             # SDF channels start at index 1 (index 0 is CT)
@@ -905,7 +920,7 @@ class StructureWeightedLoss(nn.Module):
         3. Everything else → background_weight
 
         Args:
-            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+            condition: (B, 10, H, W, D) tensor with CT + 9 SDF channels
 
         Returns:
             (B, 1, H, W, D) weight map
@@ -933,7 +948,7 @@ class StructureWeightedLoss(nn.Module):
             )
 
         # PTVs have highest priority (overwrite everything)
-        for ptv_name in ['PTV70', 'PTV56']:
+        for ptv_name in ['PTV70', 'PTV56', 'PTV50.4']:
             ptv_mask = masks[ptv_name]
             weight_map[:, 0] = torch.where(
                 ptv_mask,
@@ -955,7 +970,7 @@ class StructureWeightedLoss(nn.Module):
         Args:
             pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
             target: (B, 1, H, W, D) target dose (normalized 0-1)
-            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+            condition: (B, 10, H, W, D) condition tensor (CT + SDFs)
 
         Returns:
             Tuple of (weighted_mse_loss, metrics_dict)
@@ -1037,15 +1052,16 @@ class AsymmetricPTVLoss(nn.Module):
         Extract combined PTV mask from condition tensor SDFs.
 
         Args:
-            condition: (B, 9, H, W, D) tensor with CT + 8 SDF channels
+            condition: (B, 10, H, W, D) tensor with CT + 9 SDF channels
 
         Returns:
-            (B, H, W, D) boolean mask for combined PTV70 + PTV56
+            (B, H, W, D) boolean mask for combined PTV70 + PTV56 + PTV50.4
         """
-        # SDF channels: 1=PTV70, 2=PTV56 (0 is CT)
+        # SDF channels: 1=PTV70, 2=PTV56, 9=PTV50.4 (0 is CT)
         ptv70_mask = condition[:, 1, :, :, :] < 0
         ptv56_mask = condition[:, 2, :, :, :] < 0
-        return ptv70_mask | ptv56_mask
+        ptv504_mask = condition[:, 9, :, :, :] < 0
+        return ptv70_mask | ptv56_mask | ptv504_mask
 
     def forward(
         self,
@@ -1059,7 +1075,7 @@ class AsymmetricPTVLoss(nn.Module):
         Args:
             pred: (B, 1, H, W, D) predicted dose (normalized 0-1)
             target: (B, 1, H, W, D) target dose (normalized 0-1)
-            condition: (B, 9, H, W, D) condition tensor (CT + SDFs)
+            condition: (B, 10, H, W, D) condition tensor (CT + SDFs)
 
         Returns:
             Tuple of (asymmetric_loss, metrics_dict)
@@ -1127,14 +1143,14 @@ class BaselineUNet3D(nn.Module):
     """
     3D U-Net for direct dose regression.
     
-    Input: CT (1ch) + SDFs (8ch) = 9 channels
+    Input: CT (1ch) + SDFs (9ch) = 10 channels
     Output: Dose (1ch)
     Conditioning: Constraints via FiLM (no time embedding)
     """
-    
+
     def __init__(
         self,
-        in_channels: int = 9,
+        in_channels: int = 10,
         out_channels: int = 1,
         base_channels: int = 48,
         constraint_dim: int = 13,
@@ -1230,7 +1246,7 @@ class BaselineDosePredictor(pl.LightningModule):
     
     def __init__(
         self,
-        in_channels: int = 9,
+        in_channels: int = 10,
         out_channels: int = 1,
         base_channels: int = 48,
         constraint_dim: int = 13,
@@ -1449,10 +1465,32 @@ class BaselineDosePredictor(pl.LightningModule):
         val_loss = F.mse_loss(pred_dose, dose)
         self.log('val/loss', val_loss, prog_bar=True, on_epoch=True)
         
-        # MAE in Gy
+        # MAE in Gy (global — diagnostic)
         rx = self.hparams.rx_dose_gy
         mae_gy = F.l1_loss(pred_dose * rx, dose * rx)
-        self.log('val/mae_gy', mae_gy, prog_bar=True, on_epoch=True)
+        self.log('val/mae_gy', mae_gy, on_epoch=True)
+
+        # PTV70 MAE in Gy (checkpoint/early-stopping monitor)
+        # SDF channel 1 = PTV70; voxels inside PTV have SDF < 0
+        ptv70_mask = condition[:, 1, :, :, :] < 0
+        if ptv70_mask.any():
+            pred_ptv70 = pred_dose[ptv70_mask.unsqueeze(1).expand_as(pred_dose)]
+            target_ptv70 = dose[ptv70_mask.unsqueeze(1).expand_as(dose)]
+            mae_gy_ptv70 = F.l1_loss(pred_ptv70 * rx, target_ptv70 * rx)
+            self.log('val/mae_gy_ptv70', mae_gy_ptv70, prog_bar=True, on_epoch=True)
+
+        # OAR MAE in Gy (diagnostic)
+        # SDF channels: 4=Rectum, 5=Bladder, 6=Femur_L, 7=Femur_R, 8=Bowel
+        oar_mask = (condition[:, 4, :, :, :] < 0) | \
+                   (condition[:, 5, :, :, :] < 0) | \
+                   (condition[:, 6, :, :, :] < 0) | \
+                   (condition[:, 7, :, :, :] < 0) | \
+                   (condition[:, 8, :, :, :] < 0)
+        if oar_mask.any():
+            pred_oar = pred_dose[oar_mask.unsqueeze(1).expand_as(pred_dose)]
+            target_oar = dose[oar_mask.unsqueeze(1).expand_as(dose)]
+            mae_gy_oar = F.l1_loss(pred_oar * rx, target_oar * rx)
+            self.log('val/mae_gy_oar', mae_gy_oar, on_epoch=True)
 
         # DVH metrics for validation
         if self.dvh_loss is not None:
@@ -1915,7 +1953,7 @@ def main():
     
     # Model
     model = BaselineDosePredictor(
-        in_channels=9,
+        in_channels=10,
         out_channels=1,
         base_channels=args.base_channels,
         constraint_dim=13,
@@ -1990,8 +2028,8 @@ def main():
     callbacks = [
         ModelCheckpoint(
             dirpath=Path(args.log_dir) / args.exp_name / 'checkpoints',
-            filename='best-{epoch:03d}-{val/mae_gy:.3f}',
-            monitor='val/mae_gy',
+            filename='best-{epoch:03d}-{val/mae_gy_ptv70:.3f}',
+            monitor='val/mae_gy_ptv70',
             mode='min',
             save_top_k=3,
             save_last=True,
@@ -2003,7 +2041,7 @@ def main():
         ),
         LearningRateMonitor(logging_interval='epoch'),
         EarlyStopping(
-            monitor='val/mae_gy',
+            monitor='val/mae_gy_ptv70',
             patience=50,
             mode='min',
         ),

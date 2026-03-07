@@ -1,7 +1,7 @@
 """
 Clinical constraint checking for VMAT dose predictions.
 
-QUANTEC-based constraints for prostate VMAT with SIB (70/56 Gy in 28 fractions).
+QUANTEC-based constraints for prostate VMAT with SIB (70/56/50.4 Gy in 28 fractions).
 Single source of truth for constraint definitions and pass/fail evaluation.
 
 No external dependencies beyond eval_core.
@@ -11,7 +11,7 @@ Version: 1.0.0
 
 from typing import Dict, List, Optional
 
-from eval_core import PRIMARY_PRESCRIPTION_GY, SECONDARY_PRESCRIPTION_GY
+from eval_core import PRIMARY_PRESCRIPTION_GY, SECONDARY_PRESCRIPTION_GY, TERTIARY_PRESCRIPTION_GY
 
 
 # =============================================================================
@@ -29,20 +29,30 @@ CLINICAL_CONSTRAINTS: Dict[str, Dict] = {
         'description': 'High-dose PTV (70 Gy target)',
         'rx_gy': PRIMARY_PRESCRIPTION_GY,
         'constraints': [
-            {'metric': 'D95', 'type': 'min', 'value': 66.5, 'unit': 'Gy',
-             'description': 'D95 >= 95% of Rx'},
-            {'metric': 'V95', 'type': 'min', 'value': 95.0, 'unit': '%',
-             'description': 'V95 >= 95% (volume receiving >= 95% of Rx)'},
+            {'metric': 'V100', 'type': 'min', 'value': 95.0, 'unit': '%',
+             'description': 'V100 >= 95% (>= 95% of volume receives >= Rx)'},
+            {'metric': 'Dmax', 'type': 'max', 'value': 74.9, 'unit': 'Gy',
+             'description': 'Dmax <= 107% of Rx'},
         ],
     },
     'PTV56': {
         'description': 'Intermediate PTV (56 Gy target)',
         'rx_gy': SECONDARY_PRESCRIPTION_GY,
         'constraints': [
-            {'metric': 'D95', 'type': 'min', 'value': 53.2, 'unit': 'Gy',
-             'description': 'D95 >= 95% of Rx'},
-            {'metric': 'V95', 'type': 'min', 'value': 95.0, 'unit': '%',
-             'description': 'V95 >= 95% (volume receiving >= 95% of Rx)'},
+            {'metric': 'V100', 'type': 'min', 'value': 95.0, 'unit': '%',
+             'description': 'V100 >= 95% (>= 95% of volume receives >= Rx)'},
+            {'metric': 'Dmax', 'type': 'max', 'value': 59.92, 'unit': 'Gy',
+             'description': 'Dmax <= 107% of Rx'},
+        ],
+    },
+    'PTV50.4': {
+        'description': 'Nodal PTV (50.4 Gy target)',
+        'rx_gy': TERTIARY_PRESCRIPTION_GY,
+        'constraints': [
+            {'metric': 'V100', 'type': 'min', 'value': 95.0, 'unit': '%',
+             'description': 'V100 >= 95% (>= 95% of volume receives >= Rx)'},
+            {'metric': 'Dmax', 'type': 'max', 'value': 53.928, 'unit': 'Gy',
+             'description': 'Dmax <= 107% of Rx'},
         ],
     },
     'Rectum': {
@@ -240,15 +250,14 @@ def _get_metric_value(
     Look up a metric value from the DVH metrics dict.
 
     Handles the mapping from constraint metric names to DVH output keys:
-        D95 -> pred_D95
         Dmax -> pred_max_gy
+        V100 -> pred_V100
         V70 -> pred_V70
-        V95 -> pred_V95
         V45_cc -> pred_V45_cc
 
     Args:
         metrics: Structure DVH metrics dict
-        metric_name: Constraint metric name (e.g. 'D95', 'Dmax', 'V70', 'V45_cc')
+        metric_name: Constraint metric name (e.g. 'Dmax', 'V100', 'V70', 'V45_cc')
         prefix: 'pred' or 'target'
 
     Returns:
