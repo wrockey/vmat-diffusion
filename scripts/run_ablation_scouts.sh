@@ -35,6 +35,31 @@ STARTED_AT=$(date '+%Y-%m-%d %H:%M')
 COMPLETED=()
 FAILED=()
 
+# Condition metadata: maps condition ID to exp_name for post-processing
+declare -A CONDITION_NAMES
+CONDITION_NAMES=(
+    [C2]="C2_gradient_only"
+    [C3]="C3_dvh_only"
+    [C4]="C4_structure_only"
+    [C5]="C5_asymptv_only"
+    [C7]="C7_full_no_gradient"
+    [C8]="C8_full_no_dvh"
+    [C9]="C9_full_no_structure"
+    [C10]="C10_full_no_asymptv"
+)
+
+declare -A CONDITION_LABELS
+CONDITION_LABELS=(
+    [C2]="MSE+Gradient"
+    [C3]="MSE+DVH"
+    [C4]="MSE+Structure"
+    [C5]="MSE+AsymPTV"
+    [C7]="Full-Gradient"
+    [C8]="Full-DVH"
+    [C9]="Full-Structure"
+    [C10]="Full-AsymPTV"
+)
+
 # ---- Helper functions ----
 
 log() {
@@ -53,6 +78,44 @@ gh_comment() {
 find_best_checkpoint() {
     local run_dir="$1"
     find "$run_dir/checkpoints" -name "best-*.ckpt" -not -name "last*" | head -1
+}
+
+# Extract metrics from evaluation results JSON (computes from per-case data)
+extract_metrics() {
+    local eval_file="$1"
+    local format="${2:-table}"  # "table" for GH markdown, "summary" for console
+
+    $PYTHON -c "
+import json, numpy as np
+
+r = json.load(open('$eval_file'))
+cases = r['per_case_results']
+
+maes = [c['dose_metrics']['mae_gy'] for c in cases]
+globals_g = [c['gamma']['global_3mm3pct']['gamma_pass_rate'] for c in cases]
+ptv_g = [c['gamma']['ptv_region_3mm3pct']['gamma_pass_rate'] for c in cases]
+d95_gaps = []
+for c in cases:
+    ptv70 = c['dvh_metrics'].get('PTV70', {})
+    pred = ptv70.get('pred_D95')
+    targ = ptv70.get('target_D95')
+    if pred is not None and targ is not None:
+        d95_gaps.append(pred - targ)
+
+mae_m, mae_s = np.mean(maes), np.std(maes)
+gg_m, gg_s = np.mean(globals_g), np.std(globals_g)
+pg_m, pg_s = np.mean(ptv_g), np.std(ptv_g)
+d95_m = np.mean(d95_gaps) if d95_gaps else float('nan')
+d95_s = np.std(d95_gaps) if d95_gaps else float('nan')
+
+if '$format' == 'table':
+    print(f'| {mae_m:.2f} +/- {mae_s:.2f} | {gg_m:.1f} +/- {gg_s:.1f}% | {pg_m:.1f} +/- {pg_s:.1f}% | {d95_m:+.2f} +/- {d95_s:.2f} |')
+else:
+    print(f'MAE: {mae_m:.2f} +/- {mae_s:.2f} Gy')
+    print(f'Global Gamma: {gg_m:.1f} +/- {gg_s:.1f}%')
+    print(f'PTV Gamma: {pg_m:.1f} +/- {pg_s:.1f}%')
+    print(f'PTV70 D95 Gap: {d95_m:+.2f} +/- {d95_s:.2f} Gy')
+"
 }
 
 run_inference() {
@@ -74,22 +137,10 @@ run_inference() {
         $COMMON_INFER \
         --output_dir "$pred_dir"
 
-    # Extract key metrics from evaluation results
+    # Print metrics to console
     local eval_file="$pred_dir/baseline_evaluation_results.json"
     if [ -f "$eval_file" ]; then
-        $PYTHON -c "
-import json
-r = json.load(open('$eval_file'))
-agg = r.get('aggregate', {})
-mae = agg.get('mae_gy', {})
-gam = agg.get('gamma_3pct_3mm', {})
-ptv = agg.get('ptv_gamma_3pct_3mm', {})
-d95 = agg.get('ptv70_d95_gap_gy', {})
-print(f'MAE: {mae.get(\"mean\",\"?\"):.2f} ± {mae.get(\"std\",\"?\"):.2f} Gy')
-print(f'Global Gamma: {gam.get(\"mean\",\"?\"):.1f} ± {gam.get(\"std\",\"?\"):.1f}%')
-print(f'PTV Gamma: {ptv.get(\"mean\",\"?\"):.1f} ± {ptv.get(\"std\",\"?\"):.1f}%')
-print(f'PTV70 D95 Gap: {d95.get(\"mean\",\"?\"):+.2f} ± {d95.get(\"std\",\"?\"):.2f} Gy')
-"
+        extract_metrics "$eval_file" "summary"
     fi
 }
 
@@ -99,23 +150,14 @@ post_results() {
     local eval_file="predictions/${exp_name}_seed${SEED}_test/baseline_evaluation_results.json"
 
     if [ ! -f "$eval_file" ]; then
-        gh_comment "### $condition — ⚠️ No evaluation results found"
+        gh_comment "### $condition — No evaluation results found"
         return
     fi
 
     local metrics
-    metrics=$($PYTHON -c "
-import json
-r = json.load(open('$eval_file'))
-agg = r.get('aggregate', {})
-mae = agg.get('mae_gy', {})
-gam = agg.get('gamma_3pct_3mm', {})
-ptv = agg.get('ptv_gamma_3pct_3mm', {})
-d95 = agg.get('ptv70_d95_gap_gy', {})
-print(f'| {mae.get(\"mean\",0):.2f} ± {mae.get(\"std\",0):.2f} | {gam.get(\"mean\",0):.1f} ± {gam.get(\"std\",0):.1f}% | {ptv.get(\"mean\",0):.1f} ± {ptv.get(\"std\",0):.1f}% | {d95.get(\"mean\",0):+.2f} ± {d95.get(\"std\",0):.2f} |')
-")
+    metrics=$(extract_metrics "$eval_file" "table")
 
-    gh_comment "### $condition complete ✅
+    gh_comment "### $condition complete
 
 | MAE (Gy) | Global Gamma | PTV Gamma | D95 Gap (Gy) |
 |----------|--------------|-----------|--------------|
@@ -131,7 +173,7 @@ run_condition() {
     local train_flags="$*"
 
     log "TRAINING: $condition ($exp_name)"
-    gh_comment "### $condition — Training started 🚀
+    gh_comment "### $condition — Training started
 \`\`\`
 $PYTHON scripts/train_baseline_unet.py $COMMON_TRAIN --exp_name $exp_name $train_flags
 \`\`\`
@@ -147,11 +189,11 @@ Started: $(date '+%Y-%m-%d %H:%M')"
             post_results "$condition" "$exp_name"
             COMPLETED+=("$condition")
         else
-            gh_comment "### $condition — ⚠️ Inference failed"
+            gh_comment "### $condition — Inference failed"
             FAILED+=("$condition (inference)")
         fi
     else
-        gh_comment "### $condition — ❌ Training failed"
+        gh_comment "### $condition — Training failed"
         FAILED+=("$condition (training)")
     fi
 }
@@ -180,7 +222,7 @@ run_C5() {
 }
 
 run_C7() {
-    run_condition "C7 (Full−Gradient)" "C7_full_no_gradient" \
+    run_condition "C7 (Full-Gradient)" "C7_full_no_gradient" \
         --use_dvh_loss --dvh_loss_weight 0.5 \
         --use_structure_weighted --structure_weighted_weight 1.0 \
         --use_asymmetric_ptv --asymmetric_ptv_weight 1.0 \
@@ -189,7 +231,7 @@ run_C7() {
 }
 
 run_C8() {
-    run_condition "C8 (Full−DVH)" "C8_full_no_dvh" \
+    run_condition "C8 (Full-DVH)" "C8_full_no_dvh" \
         --use_gradient_loss --gradient_loss_weight 0.1 \
         --use_structure_weighted --structure_weighted_weight 1.0 \
         --use_asymmetric_ptv --asymmetric_ptv_weight 1.0 \
@@ -198,7 +240,7 @@ run_C8() {
 }
 
 run_C9() {
-    run_condition "C9 (Full−Structure)" "C9_full_no_structure" \
+    run_condition "C9 (Full-Structure)" "C9_full_no_structure" \
         --use_gradient_loss --gradient_loss_weight 0.1 \
         --use_dvh_loss --dvh_loss_weight 0.5 \
         --use_asymmetric_ptv --asymmetric_ptv_weight 1.0 \
@@ -207,11 +249,140 @@ run_C9() {
 }
 
 run_C10() {
-    run_condition "C10 (Full−AsymPTV)" "C10_full_no_asymptv" \
+    run_condition "C10 (Full-AsymPTV)" "C10_full_no_asymptv" \
         --use_gradient_loss --gradient_loss_weight 0.1 \
         --use_dvh_loss --dvh_loss_weight 0.5 \
         --use_structure_weighted --structure_weighted_weight 1.0 \
         --use_uncertainty_weighting --calibration_json "$CALIB_JSON"
+}
+
+# ---- Post-processing ----
+
+update_experiments_index() {
+    log "POST-PROCESSING: Updating EXPERIMENTS_INDEX.md"
+    local index_file="notebooks/EXPERIMENTS_INDEX.md"
+    local today
+    today=$(date '+%Y-%m-%d')
+
+    for cond in "${COMPLETED[@]}"; do
+        local cond_id="${cond%% *}"  # e.g. "C2" from "C2 (MSE+Gradient)"
+        local exp_name="${CONDITION_NAMES[$cond_id]}"
+        local label="${CONDITION_LABELS[$cond_id]}"
+        local eval_file="predictions/${exp_name}_seed${SEED}_test/baseline_evaluation_results.json"
+
+        if [ ! -f "$eval_file" ]; then
+            echo "[WARN] No eval file for $cond_id — skipping index update"
+            continue
+        fi
+
+        # Extract metrics for index row
+        local row
+        row=$($PYTHON -c "
+import json, numpy as np
+
+r = json.load(open('$eval_file'))
+cases = r['per_case_results']
+
+maes = [c['dose_metrics']['mae_gy'] for c in cases]
+globals_g = [c['gamma']['global_3mm3pct']['gamma_pass_rate'] for c in cases]
+ptv_g = [c['gamma']['ptv_region_3mm3pct']['gamma_pass_rate'] for c in cases]
+d95_gaps = []
+for c in cases:
+    ptv70 = c['dvh_metrics'].get('PTV70', {})
+    pred = ptv70.get('pred_D95')
+    targ = ptv70.get('target_D95')
+    if pred is not None and targ is not None:
+        d95_gaps.append(pred - targ)
+
+mae_m, mae_s = np.mean(maes), np.std(maes)
+gg_m, gg_s = np.mean(globals_g), np.std(globals_g)
+pg_m, pg_s = np.mean(ptv_g), np.std(ptv_g)
+d95_m = np.mean(d95_gaps) if d95_gaps else float('nan')
+d95_s = np.std(d95_gaps) if d95_gaps else float('nan')
+
+print(f'| $today | $cond_id $label (seed42) | \`$GIT_HASH\` | — | BaselineUNet3D | {mae_m:.2f} +/- {mae_s:.2f} (test, n={len(cases)}) | {gg_m:.1f} +/- {gg_s:.1f}% (global), {pg_m:.1f} +/- {pg_s:.1f}% (PTV) | {d95_m:+.2f} +/- {d95_s:.2f} Gy | Preliminary |')
+")
+
+        # Check if entry already exists (avoid duplicates)
+        if grep -q "$exp_name" "$index_file" 2>/dev/null; then
+            echo "[SKIP] $cond_id already in EXPERIMENTS_INDEX.md"
+        else
+            # Insert before the "In Progress" section marker
+            sed -i "/^### v2.3 Experiments — In Progress/i\\
+$row" "$index_file"
+            echo "[OK] Added $cond_id to EXPERIMENTS_INDEX.md"
+        fi
+    done
+}
+
+generate_figures() {
+    log "POST-PROCESSING: Generating ablation scout figures"
+
+    if [ -f "scripts/generate_ablation_scouts_figures.py" ]; then
+        $PYTHON scripts/generate_ablation_scouts_figures.py || {
+            echo "[WARN] Figure generation failed — run manually later"
+        }
+    else
+        echo "[WARN] Figure script not found — skipping"
+    fi
+}
+
+post_summary_table() {
+    log "POST-PROCESSING: Posting summary table to GH"
+
+    # Build a comprehensive comparison table including C1 and C6
+    local table
+    table=$($PYTHON -c "
+import json, numpy as np
+from pathlib import Path
+
+conditions = [
+    ('C1', 'Baseline (MSE)', 'baseline_v23'),
+    ('C2', 'MSE+Gradient', 'C2_gradient_only'),
+    ('C3', 'MSE+DVH', 'C3_dvh_only'),
+    ('C4', 'MSE+Structure', 'C4_structure_only'),
+    ('C5', 'MSE+AsymPTV', 'C5_asymptv_only'),
+    ('C6', 'Full combined', 'combined_loss_2.5to1'),
+    ('C7', 'Full-Gradient', 'C7_full_no_gradient'),
+    ('C8', 'Full-DVH', 'C8_full_no_dvh'),
+    ('C9', 'Full-Structure', 'C9_full_no_structure'),
+    ('C10', 'Full-AsymPTV', 'C10_full_no_asymptv'),
+]
+
+rows = []
+for cid, label, exp in conditions:
+    eval_file = Path('predictions') / f'{exp}_seed42_test' / 'baseline_evaluation_results.json'
+    if not eval_file.exists():
+        rows.append(f'| {cid} | {label} | — | — | — | — |')
+        continue
+
+    r = json.load(open(eval_file))
+    cases = r['per_case_results']
+
+    maes = [c['dose_metrics']['mae_gy'] for c in cases]
+    gg = [c['gamma']['global_3mm3pct']['gamma_pass_rate'] for c in cases]
+    pg = [c['gamma']['ptv_region_3mm3pct']['gamma_pass_rate'] for c in cases]
+    d95 = []
+    for c in cases:
+        ptv70 = c['dvh_metrics'].get('PTV70', {})
+        p, t = ptv70.get('pred_D95'), ptv70.get('target_D95')
+        if p is not None and t is not None:
+            d95.append(p - t)
+
+    d95_str = f'{np.mean(d95):+.2f} +/- {np.std(d95):.2f}' if d95 else 'N/A'
+    rows.append(f'| {cid} | {label} | {np.mean(maes):.2f} +/- {np.std(maes):.2f} | {np.mean(gg):.1f} +/- {np.std(gg):.1f}% | {np.mean(pg):.1f} +/- {np.std(pg):.1f}% | {d95_str} Gy |')
+
+print('| ID | Condition | MAE (Gy) | Global Gamma | PTV Gamma | D95 Gap |')
+print('|----|-----------|----------|--------------|-----------|---------|')
+for row in rows:
+    print(row)
+")
+
+    gh_comment "## Full C1-C10 Scout Comparison (seed42, 70 cases)
+
+$table
+
+**Note:** C1 and C6 are existing 3-seed experiments shown here at seed42 only for comparison. All results are preliminary (single-seed, 70-case dataset)."
 }
 
 # ---- Main ----
@@ -250,6 +421,8 @@ gh_comment "## Ablation Scout Batch Started
 
 Each condition will post results as it completes."
 
+# ---- Run all conditions ----
+
 for cond in "${CONDITIONS[@]}"; do
     case "$cond" in
         C2)  run_C2 ;;
@@ -264,15 +437,28 @@ for cond in "${CONDITIONS[@]}"; do
     esac
 done
 
-# ---- Summary ----
+# ---- Post-processing ----
 
 FINISHED_AT=$(date '+%Y-%m-%d %H:%M')
 
-log "ABLATION SCOUT BATCH — Complete"
+log "ABLATION SCOUT BATCH — All training/inference complete"
 echo "Started:   $STARTED_AT"
 echo "Finished:  $FINISHED_AT"
 echo "Completed: ${COMPLETED[*]:-none}"
 echo "Failed:    ${FAILED[*]:-none}"
+
+if [ ${#COMPLETED[@]} -gt 0 ]; then
+    # Update EXPERIMENTS_INDEX.md
+    update_experiments_index
+
+    # Generate comparison figures
+    generate_figures
+
+    # Post full C1-C10 comparison table to GH
+    post_summary_table
+fi
+
+# ---- Final summary ----
 
 SUMMARY="## Ablation Scout Batch Complete
 
@@ -281,7 +467,16 @@ SUMMARY="## Ablation Scout Batch Complete
 **Completed:** ${COMPLETED[*]:-none}
 **Failed:** ${FAILED[*]:-none}
 
-See individual comments above for per-condition metrics."
+### Post-processing status
+- EXPERIMENTS_INDEX.md: updated
+- Figures: generated to \`runs/ablation_scouts/figures/\`
+- Full comparison table: posted above
+
+### Remaining documentation (manual)
+- [ ] Create notebook: \`notebooks/$(date '+%Y-%m-%d')_ablation_scouts_preliminary.ipynb\`
+- [ ] Review figures and add captions
+- [ ] Commit documentation artifacts
+- [ ] Update pinned issue #63 if results change the narrative"
 
 gh_comment "$SUMMARY"
 
