@@ -37,12 +37,14 @@ TBD. Candidates:
 ## 2. Methods
 
 ### 2.1 Dataset
-- N=74 prostate VMAT cases (SIB: 70 Gy / 56 Gy in 28 fractions)
+- ~91 prostate VMAT cases (SIB: 70 Gy / 56 Gy in 28 fractions, 2-level only — PTV50.4 nodal cases excluded per #39)
+  - Current: 74 cases (v2.3); final count ~91 after inclusion/exclusion filtering
+  - 6 external institution cases held out for generalizability check
 - Institutional IRB approval (get protocol number)
-- Preprocessing: native resolution CT, B-spline dose resampling, crop to 300x300xZ
+- Preprocessing (v2.3): native resolution CT, B-spline dose resampling, crop to 300x300xZ
 - 8 structures: PTV70, PTV56, Prostate, Rectum, Bladder, Femur L/R, Bowel
 - SDF representation for structure channels
-- 80/10/10 train/val/test split, fixed across all experiments
+- ~80/10/10 train/val/test split, stratified by institution + PTV70 volume tertile, locked before training (#38)
 
 ### 2.2 Model Architecture
 - 3D U-Net with FiLM conditioning on dose constraints
@@ -52,13 +54,14 @@ TBD. Candidates:
 - [ ] Architecture figure needed
 
 ### 2.3 Loss Functions
-- **Baseline:** MSE only
-- **Combined loss:** MSE + Gradient + DVH + Structure-weighted + Asymmetric PTV
-  - Uncertainty weighting (Kendall 2018) for automatic balancing
-  - Key innovation: asymmetric PTV penalty (underdose penalized 2.5x more than overdose)
+- **Baseline (C1):** MSE only
+- **Individual components (C2-C5):** +Gradient, +DVH, +Structure-weighted, +Asymmetric PTV
+- **Full combined (C6):** All 5 + uncertainty weighting (Kendall 2018)
+- **Ablation (C7-C10):** Full minus one component each
+- Key innovation: asymmetric PTV penalty (underdose penalized 2.5x more than overdose)
 - Loss calibration procedure for initial uncertainty weights
 - [ ] Loss function equations (LaTeX)
-- [ ] Ablation showing contribution of each component?
+- Pre-registered ablation plan: see `.claude/instructions.md` and GitHub #43
 
 ### 2.4 Training
 - PyTorch Lightning, mixed precision (fp16)
@@ -68,11 +71,12 @@ TBD. Candidates:
 - Data augmentation: left-right flip only (anatomically valid for prostate)
 
 ### 2.5 Evaluation Metrics
-- MAE (Gy) — overall dose accuracy
-- Gamma analysis (3%/3mm) — global and PTV-region
-- DVH metrics: D95, D50, Dmean per structure
+- **Primary:** PTV70 D95 error (<2 Gy), PTV56 D95 error (<2 Gy), OAR DVH compliance (>90%)
+- **Secondary:** PTV-region Gamma 3%/3mm, MAE (Gy), per-structure Dmean error
+- **Diagnostic:** Global Gamma 3%/3mm, Global Gamma 2%/2mm
 - QUANTEC compliance check
-- Statistical: mean +/- std across seeds, paired Wilcoxon for comparisons
+- Statistical: mean +/- std across 3 seeds, 95% bootstrap CI, paired Wilcoxon with Holm-Bonferroni (9 tests for loss family, 4 for ablation)
+- Pre-registered analysis plan: see `.claude/instructions.md`
 
 ---
 
@@ -87,11 +91,14 @@ TBD. Candidates:
 - Tested AttentionUNet, BottleneckAttn, wider baseline — all comparable to baseline
 - Conclusion: architecture is not the bottleneck, loss function is
 
-### 3.3 Combined Loss Results
-- Progressive tuning: 3:1 (overdoses) -> 2:1 (gamma drops) -> 2.5:1 (sweet spot)
-- **3-seed aggregate:** MAE 4.07 +/- 0.64, PTV gamma 94.3 +/- 2.2%, D95 +0.06 +/- 0.26
+### 3.3 Loss Ablation Results (C1-C10)
+- C1 (baseline) → C6 (full combined): systematic improvement on PTV metrics
+- Full ablation (C7-C10): which components contribute most?
+- Asymmetric PTV weight tuning: 3:1 (overdoses) → 2:1 (gamma drops) → 2.5:1 (sweet spot)
+- **Current best (C6, 3-seed):** MAE 4.07 +/- 0.64, PTV gamma 94.3 +/- 2.2%, D95 +0.06 +/- 0.26
 - Key finding: asymmetric PTV penalty eliminates systematic underdosing
-- Key finding: PTV gamma improved 80.2% -> 94.3% (near 95% clinical target)
+- Key finding: PTV gamma improved 80.2% → 94.3% (near 95% clinical target)
+- [ ] Full C1-C10 ablation pending final dataset (#43, #14)
 
 ### 3.4 Per-Structure Analysis
 - Which structures are well-predicted? Which are challenging?

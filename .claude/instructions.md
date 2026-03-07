@@ -11,6 +11,7 @@
 | **This file** | Strategy, directives, pre-registered plan, platform reference |
 | `CLAUDE.md` | Static reference: code conventions, architecture, experiment protocol |
 | `notebooks/EXPERIMENTS_INDEX.md` | Master experiment log |
+| `paper/` | Manuscript preparation: outline, figures inventory, notes, references |
 | **GitHub Issues** | All tasks, bugs, decisions, experiment plans |
 | **GitHub Project Board** | Kanban status tracker (project #2, `gh project item-list 2 --owner wrockey --limit 100`) |
 | **GitHub Milestones** | Phase-level progress (Phase 0–3) |
@@ -98,7 +99,7 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 ### What NOT to Pursue Currently
 
 - Global Gamma as optimization target (track, don't chase)
-- DDPM tuning — deprioritized, revisit if Phase 2 plateaus (#27)
+- DDPM — definitively rejected on v2.3 data (#49 closed, #27 confirmed). Not viable.
 - VGG perceptual loss (no Gamma improvement, 5x overhead)
 - Pure MSE/MAE optimization (causes PTV underdosing)
 
@@ -121,7 +122,7 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 
 **Title:** "Loss-function engineering for clinically acceptable prostate VMAT dose prediction"
 **Target journal:** Medical Physics
-**Dataset:** ~161 SIB cases from 2 institutions. Inclusion: SIB protocol, PTV70+PTV56 contoured, D95 >= 64 Gy, complete DICOM-RT (#39).
+**Dataset:** ~91 2-level SIB cases from 2 institutions (Amendment 3, 2026-03-07, #39). Inclusion: PTV70+PTV56 only, no PTV50.4 nodal target, complete DICOM-RT. PTV50.4 cases excluded due to different beam arrangements producing confounding OAR dose distributions and confirmed dose hallucination in preliminary training. Original estimate was ~161; see #39 for full rationale.
 **Split (#38):** ~80/10/10 train/val/test, stratified by institution + PTV70 volume tertile, locked before training.
 
 ### Experimental Conditions (#43)
@@ -178,7 +179,9 @@ All components implemented. Phase 2 combines them with uncertainty weighting (Ke
 
 ### Cross-Institutional Validation
 
-Secondary: Train on B only -> test on A; train on A+B -> test (standard). Report gap.
+~~Secondary: Train on B only -> test on A; train on A+B -> test (standard). Report gap.~~
+
+**Amendment 3 (2026-03-07):** Revised to single-institution (B, N≈86) with external validation (U, N=6). Only 6 Institution U cases meet PTV70/PTV56-only criteria — insufficient for cross-institutional training arm. The 6 U cases serve as held-out external generalizability check. See #39.
 
 ---
 
@@ -210,4 +213,4 @@ Full reference: `memory/argon_cluster.md`. SGE scheduler (not SLURM), UI-GPU que
 
 ---
 
-*Last updated: 2026-03-06*
+*Last updated: 2026-03-07*

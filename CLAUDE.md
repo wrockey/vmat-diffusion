@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-VMAT Diffusion is a deep learning research project for automated **Volumetric Modulated Arc Therapy (VMAT) dose prediction** in radiation therapy. It uses diffusion models (DDPM) and baseline U-Net architectures to predict 3D dose distributions from patient CT scans, organ contours, and clinical dose constraints.
+VMAT Diffusion is a deep learning research project for automated **Volumetric Modulated Arc Therapy (VMAT) dose prediction** in radiation therapy. It uses a 3D U-Net with clinical loss engineering to predict dose distributions from patient CT scans, organ contours, and clinical dose constraints. A DDPM (diffusion model) was evaluated and rejected.
 
 **Disease site:** Prostate cancer with SIB (70 Gy PTV70=prostate / 56 Gy PTV56=seminal vesicles in 28 fractions)
-**Current dataset:** ~70 cases, expecting 200-250 near-term
+**Current dataset:** ~74 cases (v2.3), expecting ~91 2-level SIB cases after filtering
 **Clinical targets (updated 2026-02-17):** PTV70 D95 >= 66.5 Gy, PTV56 D95 >= 53.2 Gy, OAR DVH compliance, PTV-region Gamma > 95%. Global Gamma tracked as diagnostic only — see `.claude/instructions.md` for full priority table.
 
 ## Repository Structure
@@ -42,6 +42,12 @@ vmat-diffusion/
 │   ├── preprocessing_guide.md
 │   ├── training_guide.md
 │   └── README.md
+├── paper/                            # Manuscript preparation
+│   ├── outline.md                    # Section-by-section paper outline
+│   ├── notes.md                      # Running ideas, reviewer anticipation
+│   ├── figures/                      # Final publication figures (mapped to sources)
+│   ├── supplemental/                 # Supplemental material inventory
+│   └── references.bib                # BibTeX references
 ├── experiments/                      # Experiment output artifacts
 ├── .claude/instructions.md           # Detailed project state and session notes
 ├── oar_mapping.json                  # DICOM structure name → canonical mapping
@@ -150,10 +156,11 @@ python scripts/train_dose_ddpm_v2.py --data_dir /path/to/processed_npz --epochs 
 - Skip connections, SiLU activations, GroupNorm
 - ~23.7M parameters
 
-### Model: DoseDDPM (experimental, not recommended)
+### Model: DoseDDPM (rejected — do not use)
 - Conditional DDPM with cosine noise schedule, DDIM sampling (50 steps)
-- SimpleUNet3D backbone with time embedding, base_channels=32 (32→64→128→256)
-- Matches but does not beat baseline; added complexity without benefit
+- SimpleUNet3D backbone with time embedding, base_channels=48
+- Catastrophically fails on v2.3 data: predicts ~10% of target PTV dose (D95 4-6 Gy vs 70 Gy)
+- Confirmed on both v2.2.0 (n=23) and v2.3 (n=74) datasets. Not viable for dose prediction.
 
 ## Code Conventions
 
@@ -468,7 +475,8 @@ Four milestones track phase-level progress: `Phase 0: Setup`, `Phase 1: Evaluati
   - `.claude/instructions.md` — **THE PLAN:** living project state, strategy, phased roadmap overview, decisions summary. Updated every session.
   - `CLAUDE.md` — static reference (this file: conventions, architecture, experiment protocol, GitHub workflow). Rarely updated.
   - `notebooks/EXPERIMENTS_INDEX.md` — master experiment log. Updated after every experiment.
-  - **GitHub Issues** — individual tasks, bugs, backburner ideas, decision records. Updated as work progresses.
+  - `paper/` — manuscript preparation: outline, figure inventory, notes, BibTeX. Updated as paper takes shape.
+  - **GitHub Issues** — individual tasks, bugs, backburner ideas, decision records. Updated as work progresses. Publication tasks: #18 (manuscript), #16 (failure report), #17 (code release), #5 (data provenance).
   - **GitHub Milestones** — phase-level progress. Updated when issues are closed.
 - **No separate plan files.** If a sub-plan is needed, it must be referenced from `.claude/instructions.md`. Currently one archived sub-plan exists: `docs/DDPM_OPTIMIZATION_PLAN.md` (ARCHIVED).
 - **Script path convention:** Both `train_baseline_unet.py` and `inference_baseline_unet.py` auto-resolve paths relative to the project root (`scripts/../`), so `--log_dir` defaults to `PROJECT_ROOT/runs/` and relative `--output_dir` paths resolve to `PROJECT_ROOT/<path>` regardless of which directory you launch from. All training runs and predictions should land in `PROJECT_ROOT/runs/` and `PROJECT_ROOT/predictions/` respectively — never in `scripts/runs/` or `scripts/predictions/`.
