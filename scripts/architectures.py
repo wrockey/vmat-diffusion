@@ -106,7 +106,7 @@ class AttentionUNet3D(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 9,
+        in_channels: int = 10,
         out_channels: int = 1,
         base_channels: int = 48,
         constraint_dim: int = 13,
@@ -302,7 +302,7 @@ class BottleneckAttnUNet3D(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 9,
+        in_channels: int = 10,
         out_channels: int = 1,
         base_channels: int = 48,
         constraint_dim: int = 13,
@@ -404,7 +404,7 @@ ARCHITECTURE_DESCRIPTIONS = {
 
 def build_model(
     architecture: str,
-    in_channels: int = 9,
+    in_channels: int = 10,
     out_channels: int = 1,
     base_channels: int = 48,
     constraint_dim: int = 13,
