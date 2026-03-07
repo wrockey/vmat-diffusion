@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-Deep learning dose prediction for prostate radiation therapy has progressed rapidly from 2D feasibility studies (2017-2019) to fully 3D, clinically deployable pipelines (2023-2026). The dominant architecture remains the U-Net and its variants, though GANs, transformers, and diffusion models have recently entered the field. Dataset sizes are typically 60-160 patients from single institutions; multi-institutional validation remains rare. Loss function engineering is an active area of innovation, with DVH-aware, moment-based, structure-weighted, and gradient-penalty losses all showing improvements over standard MSE/MAE losses.
+Deep learning dose prediction for prostate radiation therapy has progressed rapidly from 2D feasibility studies (2017-2019) to fully 3D, clinically deployable pipelines (2023-2026). The dominant architecture remains the U-Net and its variants, though GANs, transformers, and diffusion models have recently entered the field. Dataset sizes are typically 60-160 patients from single institutions; multi-institutional validation remains rare. Loss function engineering is an active area of innovation, with DVH-aware, moment-based, and gradient-penalty losses all showing improvements over standard MSE/MAE losses.
 
 **State-of-the-art benchmarks for prostate dose prediction:**
 - **MAE:** 0.9-2.1 Gy (structure-specific); structure errors within 1-3% of prescription dose
@@ -32,45 +32,41 @@ The D95 accuracy is competitive with or superior to published results. The PTV g
 |---|---------|------|---------|---|-------------|---------------|------|-------------|-------------|
 | 1 | Nguyen et al. | 2019 | Sci Reports | 88 | Modified 2D U-Net | Contour masks (6 structures) | MSE | DSC 0.91 (isodose); max/mean dose error <5% Rx | No |
 | 2 | Kearney et al. | 2018 | Phys Med Biol | 151 | DoseNet (3D FCN) | CT + contours + distance maps | MAE + perceptual | Superior to U-Net and FC methods for SBRT prostate | No |
-| 3 | Ahn et al. | 2019 | J Radiat Res | 95 | 3D CNN | Contour masks | MSE | Comparable to RapidPlan; 5-fold CV on 80 training | No |
-| 4 | Nguyen et al. | 2021 | Radiother Oncol | 248 | 3D Dense Dilated U-Net | CT + contours + Rx | MSE | DSC 0.87-0.99 (after TL); generalized across 4 styles | Yes (2) |
-| 5 | Eriksson et al. | 2021 | PHIRO | 160 | Densely Connected U-Net | CT + contours (triplets) | MSE | D95 error 1.0%, D98 1.9%; 100% gamma 3%/3mm pass | No |
-| 6 | Ogunmolu et al. | 2021 | Front AI | 100 | ML + output init | CT + contours + priorities | MSE | Improved D95, Dmean for PTV and OARs | No |
-| 7 | Chen et al. | 2022 | Proc SPIE | 140 | SA-Net (Scale Attention) | CT + distance maps | MSE | Avg dose diff 0.94 Gy (2.1% of Rx=45 Gy) | No |
-| 8 | Seo et al. | 2023 | J Radiat Res | 68 | HD-UNet (AIVOT) | CT + contours | MSE | DVH diff: target 1.32+/-1.35%, OAR 2.08+/-2.79% | No |
-| 9 | Katsuta et al. | 2023 | Physica Medica | 104 | 3D U-Net | CT + contours | L2 vs Lstruct | Structure loss improves DSC >20% at higher isodose levels | No |
-| 10 | Fransson et al. | 2024 | Med Phys | 35 (212 fx) | DL pipeline | MR + contours | MSE | D95 error 0.7% Rx, D98 0.7% Rx, D2 1.7% Rx for CTV | No |
-| 11 | Church et al. | 2024 | PHIRO | 140 | ResUNet + scripted opt | CT + contours + Rx (SIB) | MSE | D95 0.27+/-0.37%; first fully automated TPS workflow | No |
-| 12 | Kontaxis et al. | 2020 | Phys Med Biol | 101 | DeepDose (3D CNN) | Physics-based MLC inputs | MSE | Segment-level dose; passes clinical QA gamma | No |
+| 3 | Norouzi Kandalan et al. | 2020 | Radiother Oncol | 248 | 3D Dense Dilated U-Net | CT + contours + Rx | MSE | DSC 0.87-0.99 (after TL); generalized across 4 styles | Yes (2) |
+| 4 | Lempart et al. | 2021 | PHIRO | 160 | Densely Connected U-Net | CT + contours (triplets) | MSE | D95 error 1.0%, D98 1.9%; 100% gamma 3%/3mm pass | No |
+| 5 | Adabi et al. | 2022 | Proc SPIE | 140 | SA-Net (Scale Attention) | CT + distance maps | MSE | Avg dose diff 0.94 Gy (2.1% of Rx=45 Gy) | No |
+| 6 | Kadoya et al. | 2023 | J Radiat Res | 68 | HD-UNet (AIVOT) | CT + contours | MSE | DVH diff: target 1.32+/-1.35%, OAR 2.08+/-2.79% | No |
+| 7 | Fransson et al. | 2024 | Med Phys | 35 (212 fx) | DL pipeline | MR + contours | MSE | D95 error 0.7% Rx, D98 0.7% Rx, D2 1.7% Rx for CTV | No |
+| 8 | Church et al. | 2024 | PHIRO | 140 | ResUNet + scripted opt | CT + contours + Rx (SIB) | MSE | D95 0.27+/-0.37%; first fully automated TPS workflow | No |
+| 9 | Kontaxis et al. | 2020 | Phys Med Biol | 101 | DeepDose (3D CNN) | Physics-based MLC inputs | MSE | Segment-level dose; passes clinical QA gamma | No |
 
 ### 2.2 Multi-Site, Challenge, and Cross-Site Papers
 
 | # | Authors | Year | Journal | N | Architecture | Key Metrics | Site |
 |---|---------|------|---------|---|-------------|-------------|------|
-| 13 | Babier et al. (OpenKBP) | 2021 | Med Phys | 340 | Challenge (multiple) | Dose 2.26, DVH 1.27 (best) | H&N |
-| 14 | Zimmermann et al. | 2021 | Med Phys | 340 | U-Net + ResNet | Dose 2.62, DVH 1.52; DVH diff <1% | H&N |
-| 15 | Mashayekhi et al. | 2022 | Med Phys | 70+58 | 3D U-Net (site-agnostic) | DVH loss improves coverage; transfer learning | Multi |
-| 16 | nnDoseNet | 2025 | medRxiv | 80+OpenKBP | nnU-Net adapted | D95 met 11/35 vs 3/35 clinical | Prostate+H&N |
-| 17 | Multi-site 622 pts | 2025 | Radiat Oncol | 622 | U-Net variants | Multi-tumor eval | 7 types |
+| 10 | Babier et al. (OpenKBP) | 2021 | Med Phys | 340 | Challenge (multiple) | Dose 2.26, DVH 1.27 (best) | H&N |
+| 11 | Zimmermann et al. | 2021 | Med Phys | 340 | U-Net + ResNet | Dose 2.62, DVH 1.52; DVH diff <1% | H&N |
+| 12 | Mashayekhi et al. | 2022 | Med Phys | 70+58 | 3D U-Net (site-agnostic) | DVH loss improves coverage; transfer learning | Multi |
+| 13 | nnDoseNet | 2025 | medRxiv | 80+OpenKBP | nnU-Net adapted | D95 met 11/35 vs 3/35 clinical | Prostate+H&N |
+| 14 | Hou et al. | 2025 | Radiat Oncol | 622 | U-Net variants | Multi-tumor eval; 62.6% clinically acceptable | 7 types |
 
 ### 2.3 Diffusion Models for Dose Prediction
 
 | # | Authors | Year | Venue | Architecture | Site |
 |---|---------|------|-------|-------------|------|
-| 18 | DiffDP | 2023 | MICCAI | Conditional DDPM | Rectal (130) |
-| 19 | DoseDiff (Zhang) | 2024 | IEEE TMI | Distance-aware DDPM + MMFNet | Multi-site |
-| 20 | MD-Dose (Fu) | 2024 | arXiv | Mamba-based diffusion | Thoracic (300) |
-| 21 | Score-based DMTP | 2025 | Front Oncol | Score-based diffusion | H&N, chest |
+| 15 | DiffDP | 2023 | MICCAI | Conditional DDPM | Rectal (130) |
+| 16 | DoseDiff (Zhang) | 2024 | IEEE TMI | Distance-aware DDPM + MMFNet | Multi-site |
+| 17 | MD-Dose (Fu) | 2024 | arXiv | Mamba-based diffusion | Thoracic (300) |
+| 18 | Yu et al. (DMTP) | 2025 | Front Oncol | Score-based diffusion | H&N, chest, abdomen |
 
 ### 2.4 Loss Function Engineering Papers
 
 | # | Authors | Year | Loss Innovation | Key Result |
 |---|---------|------|----------------|------------|
-| 22 | Nguyen (DoseRTX) | 2022 | Moment-based loss (DVH surrogate) | DVH score +11% over MAE (p<0.01) |
-| 23 | Shen (Sharp loss) | 2021 | Gradient-aware "sharp loss" | Better in high-gradient regions |
-| 24 | Zimmermann | 2021 | Feature loss (video classifier) | 2nd in OpenKBP DVH stream |
-| 25 | Katsuta | 2023 | Structure loss (Lstruct) | DSC improved >20% higher isodose |
-| 26 | Fan (Mc-GAN) | 2022 | Locality-constrained + self-supervised | Improved local accuracy |
+| 19 | Jhanwar et al. | 2022 | Moment-based loss (DVH surrogate) | DVH score +11% over MAE (p<0.01) |
+| 20 | Bai et al. (Sharp loss) | 2021 | Gradient-aware "sharp loss" | Better in high-gradient regions |
+| 21 | Zimmermann | 2021 | Feature loss (video classifier) | 2nd in OpenKBP DVH stream |
+| 22 | Zhan et al. (Mc-GAN) | 2022 | Locality-constrained + self-supervised | Improved local accuracy |
 
 ---
 
@@ -80,8 +76,8 @@ The D95 accuracy is competitive with or superior to published results. The PTV g
 
 | Evaluation Region | Best Reported MAE | Source |
 |-------------------|-------------------|--------|
-| Within PTV only | 0.7-1.0 Gy (1-2% of Rx) | Eriksson 2021, Fransson 2024 |
-| Within contoured structures | 1.0-2.1 Gy | Chen 2022 (SA-Net), Seo 2023 |
+| Within PTV only | 0.7-1.0 Gy (1-2% of Rx) | Lempart 2021, Fransson 2024 |
+| Within contoured structures | 1.0-2.1 Gy | Adabi 2022 (SA-Net), Kadoya 2023 |
 | Full body/volume | 2-5 Gy | Varies with low-dose inclusion |
 
 **Note on comparability:** Most published prostate studies report MAE within specific structures (PTV, OARs) or within dose-relevant regions, not as a whole-body voxel average. This project's MAE of 4.07 Gy is computed over the full volume including low-dose background, making it not directly comparable to structure-specific MAE values. **Reporting structure-specific MAE is essential for fair comparison.**
@@ -111,13 +107,12 @@ The D95 accuracy is competitive with or superior to published results. The PTV g
 
 Most dose prediction papers use **MSE or L1 only**. Emerging innovations:
 
-1. **Gradient/sharp losses:** Shen et al. (2021) -- penalizes errors in high-gradient regions
-2. **DVH-aware losses:** Moment-based surrogate (DoseRTX 2022, +11%), soft sorting (nnDoseNet 2025)
-3. **Structure-weighted losses:** Katsuta (2023) Lstruct, DSC >20% improvement
-4. **Feature losses:** Zimmermann (2021) -- pretrained video classifier, 2nd in OpenKBP
-5. **Adversarial losses:** GAN-based (DoseGAN, Mc-GAN, DiffDP)
-6. **Asymmetric/directional losses:** Penalize PTV under-dosing more than over-dosing -- **not reported in published literature**
-7. **Uncertainty-weighted multi-task losses:** Kendall (2018) -- **not applied to dose prediction loss balancing in any published work**
+1. **Gradient/sharp losses:** Bai et al. (2021) -- penalizes errors in high-gradient regions
+2. **DVH-aware losses:** Moment-based surrogate (Jhanwar 2022, +11%), soft sorting (nnDoseNet 2025)
+3. **Feature losses:** Zimmermann (2021) -- pretrained video classifier, 2nd in OpenKBP
+4. **Adversarial losses:** GAN-based (DoseGAN, Mc-GAN, DiffDP)
+5. **Asymmetric/directional losses:** Penalize PTV under-dosing more than over-dosing -- **not reported in published literature**
+6. **Uncertainty-weighted multi-task losses:** Kendall (2018) -- **not applied to dose prediction loss balancing in any published work**
 
 ### 4.2 Input Features
 
@@ -127,11 +122,11 @@ Most dose prediction papers use **MSE or L1 only**. Emerging innovations:
 | Distance maps | Growing (SA-Net, DoseDiff) | Emerging |
 | **SDFs** | **DoseDiff 2024, this project** | **Emerging best practice** |
 | CT images | Nearly universal | Standard |
-| **Dose constraints / Rx** | **Rare (Nguyen 2021, this project)** | **Novel for FiLM conditioning** |
+| **Dose constraints / Rx** | **Rare (Norouzi Kandalan 2020, this project)** | **Novel for FiLM conditioning** |
 
 ### 4.3 Multi-Institutional Validation
 
-Maximum: 2 institutions (Nguyen 2021). **This project's 2-institution design matches the best published.**
+Maximum: 2 institutions (Norouzi Kandalan 2020). **This project's 2-institution design matches the best published.**
 
 ### 4.4 Diffusion Models
 
@@ -154,11 +149,10 @@ No published diffusion model targets prostate VMAT specifically. This project's 
 
 | Study | N | Protocol |
 |-------|---|----------|
-| Nguyen 2021 | 248 | Prostate VMAT (transfer learning) |
-| Eriksson 2021 | 160 | Prostate VMAT |
+| Norouzi Kandalan 2020 | 248 | Prostate VMAT (transfer learning) |
+| Lempart 2021 | 160 | Prostate VMAT |
 | Kearney 2018 | 151 | Prostate SBRT |
 | Church 2024 | 140 | Prostate VMAT SIB |
-| Katsuta 2023 | 104 | Prostate RT |
 | **This project** | **~70 (expanding to 200)** | **Prostate VMAT SIB** |
 
 200 cases would rank among the largest prostate-specific datasets.
@@ -183,38 +177,41 @@ No published diffusion model targets prostate VMAT specifically. This project's 
 ## 8. References
 
 ### Prostate-Specific
-1. Nguyen D, et al. Sci Reports. 2019;9:1076. DOI: 10.1038/s41598-018-37741-x
+1. Nguyen D, et al. Sci Reports. 2019;9:1076. DOI: 10.1038/s41598-018-37741-x. PMID: 30705354
 2. Kearney V, et al. Phys Med Biol. 2018;63(23):235022. PMID: 30511663
-3. Nguyen D, et al. Radiother Oncol. 2021;155:105-113. PMC7908143
-4. Eriksson O, et al. PHIRO. 2021;19:112-119. PMC8353474
-5. Katsuta Y, et al. Physica Medica. 2023;107:102545
-6. Fransson S, et al. Med Phys. 2024. PMID: 39106418
-7. Church C, et al. PHIRO. 2024;32:100645
-8. Seo Y, et al. J Radiat Res. 2023;64(5):842-851. PMID: 37607667
+3. Norouzi Kandalan R, Nguyen D, et al. Radiother Oncol. 2020;155:105-113. PMC7908143
+4. Lempart M, et al. PHIRO. 2021;19:112-119. PMC8353474
+5. Adabi S, Tsen TC, Yuan Y. Proc SPIE. 2022. PMID: 36147747
+6. Kadoya N, et al. J Radiat Res. 2023;64(5):842-851. PMID: 37607667
+7. Fransson S, et al. Med Phys. 2024. PMID: 39106418
+8. Church C, et al. PHIRO. 2024;32:100645. PMID: 39310221
 9. Kontaxis C, et al. Phys Med Biol. 2020;65(7):075002. PMID: 32053803
 
 ### Challenge and Multi-Site
-10. Babier A, et al. Med Phys. 2021;48(9):5549-5561 (OpenKBP)
-11. Zimmermann L, et al. Med Phys. 2021;48(9):5562-5570
-12. Mashayekhi M, et al. Med Phys. 2022;49(3):1391-1406
-13. nnDoseNet. medRxiv. 2025. DOI: 10.1101/2025.03.21.25324413
+10. Babier A, et al. Med Phys. 2021;48(9):5549-5561 (OpenKBP). PMID: 34156719
+11. Zimmermann L, et al. Med Phys. 2021;48(9):5562-5566. PMID: 34156727
+12. Mashayekhi M, et al. Med Phys. 2022;49(3):1391-1406. PMID: 35037276
+13. nnDoseNet (Chang HH, et al.). medRxiv. 2025. DOI: 10.1101/2025.03.21.25324413
+14. Hou Z, et al. Radiat Oncol. 2025;20:80. DOI: 10.1186/s13014-025-02634-7. PMID: 40390053
 
 ### Diffusion Models
-14. DiffDP. MICCAI. 2023. arXiv: 2307.09794
-15. Zhang Z, et al. IEEE TMI. 2024;43(10):3621-3633. PMID: 38564344
-16. Fu C, et al. arXiv. 2024. arXiv: 2403.08479
+15. DiffDP (Feng Z, et al.). MICCAI. 2023. arXiv: 2307.09794
+16. Zhang Y, et al. IEEE TMI. 2024;43(10):3621-3633. PMID: 38564344
+17. Fu L, et al. arXiv. 2024. arXiv: 2403.08479
+18. Yu X, et al. Front Oncol. 2025;14:1473050. DOI: 10.3389/fonc.2024.1473050. PMID: 39830643
 
 ### Loss Engineering
-17. Nguyen D (DoseRTX). Phys Med Biol. 2022;67(18):185012. PMC9490215
-18. Shen C, et al. BioMed Eng OnLine. 2021;20:101. PMC8501531
-19. Kendall A, et al. CVPR. 2018. arXiv: 1705.07115
+19. Jhanwar G, et al. Phys Med Biol. 2022;67(18):185012. PMC9490215
+20. Bai X, et al. BioMed Eng OnLine. 2021;20:101. PMC8501531
+21. Zhan B, et al. Med Image Anal. 2022;77:102339. DOI: 10.1016/j.media.2021.102339. PMID: 34990905
+22. Kendall A, et al. CVPR. 2018. arXiv: 1705.07115
 
 ### Automated Plan Generation
-20. Heilemann G, et al. Med Phys. 2023. PMID: 37314944
-21. Hrinivich WT, et al. Med Phys. 2024. DOI: 10.1002/mp.17100
-22. Arberet S, et al. Med Phys. 2025. DOI: 10.1002/mp.17673
-23. Shaffer R, et al. Med Phys. 2026. DOI: 10.1002/mp.70306
+23. Heilemann G, et al. Med Phys. 2023. PMID: 37314944
+24. Hrinivich WT, et al. Med Phys. 2024. DOI: 10.1002/mp.17100
+25. Arberet S, et al. Med Phys. 2025. DOI: 10.1002/mp.17673
+26. Shaffer R, et al. Med Phys. 2026. DOI: 10.1002/mp.70306
 
 ### Open-Source
-24. PortPy: https://github.com/PortPy-Project/PortPy
-25. ECHO-VMAT: https://github.com/PortPy-Project/ECHO-VMAT
+27. PortPy: https://github.com/PortPy-Project/PortPy
+28. ECHO-VMAT: https://github.com/PortPy-Project/ECHO-VMAT
