@@ -300,5 +300,46 @@
             "sigmoid",
             "bowelavoid"
         ]
+    },
+    "8": {
+        "name": "ptv50.4",
+        "variations": [
+            "PTV50.4",
+            "PTV 50.4",
+            "PTV504",
+            "PTV5040",
+            "PTV 5040",
+            "PTV_5040",
+            "PTV50.4_AP",
+            "PTV50.4_2-27",
+            "PTV50.4_2-27_AP",
+            "PTV5040ssr",
+            "PTV5040eval",
+            "PTV5040new",
+            "PTV 5040 JC",
+            "PTV5040 JC",
+            "PTV50.4-MS",
+            "PTV5040-MS",
+            "PTV50.4 OA",
+            "PTV50.4_QK",
+            "PlanningPTV5040",
+            "PPTV5040",
+            "ptv50.4",
+            "ptv504",
+            "ptv5040",
+            "ptv50.4ap",
+            "ptv50.4227",
+            "ptv50.4227ap",
+            "ptv5040ssr",
+            "ptv5040eval",
+            "ptv5040new",
+            "ptv5040jc",
+            "ptv50.4ms",
+            "ptv5040ms",
+            "ptv50.4oa",
+            "ptv50.4qk",
+            "planningptv5040",
+            "pptv5040"
+        ]
     }
 }
