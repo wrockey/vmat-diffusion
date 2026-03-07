@@ -50,20 +50,20 @@ def load_sample(npz_path: Path) -> Dict[str, torch.Tensor]:
     """Load a single .npz file and build tensors matching training format.
 
     Returns tensors with batch dimension (B=1) for compatibility with loss functions.
-    The condition tensor is (1, 9, H, W, D) = CT + 8 SDF channels.
+    The condition tensor is (1, C, H, W, D) = CT + SDF channels (9 for v2.3, 10 for v2.4).
     """
     data = np.load(npz_path, allow_pickle=True)
 
     ct = torch.from_numpy(data['ct']).float()                        # (H, W, D)
     dose = torch.from_numpy(data['dose']).float()                    # (H, W, D)
-    masks_sdf = torch.from_numpy(data['masks_sdf']).float()          # (8, H, W, D)
+    masks_sdf = torch.from_numpy(data['masks_sdf']).float()          # (N, H, W, D)
 
-    # Build condition tensor: CT (1 ch) + SDFs (8 ch) = 9 channels
-    condition = torch.cat([ct.unsqueeze(0), masks_sdf], dim=0)       # (9, H, W, D)
+    # Build condition tensor: CT (1 ch) + SDFs (N ch)
+    condition = torch.cat([ct.unsqueeze(0), masks_sdf], dim=0)       # (1+N, H, W, D)
 
     # Add batch dimension
     dose = dose.unsqueeze(0).unsqueeze(0)          # (1, 1, H, W, D)
-    condition = condition.unsqueeze(0)              # (1, 9, H, W, D)
+    condition = condition.unsqueeze(0)              # (1, 1+N, H, W, D)
 
     return {
         "dose": dose,
@@ -125,7 +125,7 @@ def main():
     for f in selected_files:
         sample = load_sample(f)
         target = sample["dose"].to(device)           # (1, 1, H, W, D)
-        condition = sample["condition"].to(device)    # (1, 9, H, W, D)
+        condition = sample["condition"].to(device)    # (1, C, H, W, D)
 
         # Simulate untrained model output: GT + Gaussian noise
         pred = target + torch.randn_like(target) * noise_std_normalized
