@@ -127,25 +127,26 @@ python scripts/train_dose_ddpm_v2.py --data_dir /path/to/processed_npz --epochs 
 ## Architecture Overview
 
 ### Data Pipeline
-- **Input:** CT (1 channel) + Signed Distance Fields for 9 structures (9 channels) = 10 input channels
+- **Input:** CT (1 channel) + SDFs (v2.3: 8 channels = 9 total; v2.4: 9 channels = 10 total)
 - **Output:** 3D dose distribution (1 channel)
 - **Constraints:** 13-dimensional vector (prescription doses + OAR limits)
-- **Preprocessing (v2.4, #68):** CT and masks kept at native resolution; dose resampled to CT grid (B-spline); all volumes cropped to ~300×300×Z centered on prostate. Variable output shape per patient. Absent structures use SDF=0.0 (not +1.0) to distinguish "doesn't exist" from "far away" (#67).
+- **Preprocessing (v2.3; v2.4 pending #66/#67/#68):** CT and masks kept at native resolution; dose resampled to CT grid (B-spline); all volumes cropped to ~300×300×Z centered on prostate. Variable output shape per patient. v2.4 will add PTV50.4 as 9th structure and use SDF=0.0 for absent structures (#67).
 - **Patch size:** 128³ voxels during training, sliding window for full-volume inference
 - **Data split:** 80/10/10 (train/val/test), stratified by plan type + institution + PTV70 volume (#69)
 
-### 9 Anatomical Structures (SDF channels)
-0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder, 5: Femur_L, 6: Femur_R, 7: Bowel, 8: PTV50.4
+### Anatomical Structures (SDF channels)
+**v2.3 (current):** 8 structures — 0: PTV70, 1: PTV56, 2: Prostate, 3: Rectum, 4: Bladder, 5: Femur_L, 6: Femur_R, 7: Bowel
+**v2.4 (pending #66):** 9 structures — adds 8: PTV50.4
 
-**Absent-structure convention:** SDF = 0.0 everywhere (not +1.0). This distinguishes "structure doesn't exist" from "far from structure." See #67.
+**Absent-structure convention (v2.4, #67):** SDF = 0.0 everywhere (not +1.0). This distinguishes "structure doesn't exist" from "far from structure." Current v2.3 uses +1.0 — this will be fixed in v2.4.
 
 ### NPZ Data Format (v2.3.0)
 ```python
 {
     'ct': (Y, X, Z) float32,              # Normalized [0,1], native resolution cropped
     'dose': (Y, X, Z) float32,            # Normalized to Rx, on CT grid cropped
-    'masks': (9, Y, X, Z) uint8,          # Binary masks, native grid cropped (9 structures)
-    'masks_sdf': (9, Y, X, Z) float32,    # Signed distance fields [-1,1]; 0.0 = absent
+    'masks': (8, Y, X, Z) uint8,          # Binary masks (v2.3: 8 structs; v2.4: 9 with PTV50.4)
+    'masks_sdf': (8, Y, X, Z) float32,    # SDFs [-1,1] (v2.3: +1.0 for absent; v2.4: 0.0)
     'constraints': (13,) float32,          # [Rx, OAR limits...]
     'metadata': dict,                      # Case info, spacing, crop, validation
 }
